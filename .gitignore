@@ -19,6 +19,9 @@ supabase/.branches/
 supabase/.temp/
 supabase/.env
 
+# Netlify CLI link state — machine-local, holds only the site id
+.netlify/
+
 # Logs
 *.log
 npm-debug.log*
