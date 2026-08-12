@@ -25,12 +25,23 @@ Verified against the deployed stack:
 - The live bundle carries the prod Supabase ref and the Railway API URL,
   with no localhost and no dev-project reference.
 
+Production auth path, verified against `flowspace-v2-prod`:
+
+- GoTrue reachable; a non-existent account returns a clean
+  `400 invalid_credentials` rather than a 500 or a CORS failure.
+- The deployed UI surfaces that error correctly, proving the whole chain:
+  Netlify bundle → prod Supabase → rendered message.
+- `disable_signup: false`, `mailer_autoconfirm: false` — sign-up is open
+  and email confirmation is required, which is why **Site URL** must
+  point at the Netlify origin. A wrong value there sends every
+  confirmation link to the wrong host and no new user can finish.
+
 **What deployment does NOT prove.** The 39 automated checks cannot run
 against prod, because prod deliberately has no seed — and the suites are
 built on seeded fixtures across two tenants. They pass against
-`flowspace-v2-dev`. Prod currently has zero users, so sign-up, tenant
-isolation, invitations and realtime are unexercised there until a real
-account exists.
+`flowspace-v2-dev`. Prod has **zero rows in every table**, so sign-up,
+tenant isolation, invitations and realtime are unexercised there until a
+real account exists. The first real sign-up is the remaining test.
 
 Frontend builds are uploaded pre-built from `frontend/`, using
 `frontend/.env.production` (gitignored). The site is not connected to the
