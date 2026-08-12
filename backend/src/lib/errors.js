@@ -35,6 +35,10 @@ export function fromPostgrestError(error, fallbackMessage = 'Request failed') {
       return new HttpError(409, error.message || 'Operation not allowed', error.code);
     case '22023': // invalid_parameter_value — raised by our RPCs
       return new HttpError(400, error.message || 'Invalid input', error.code);
+    case '22P02': // invalid_text_representation — e.g. a non-uuid path param
+      return new HttpError(400, 'Malformed identifier', error.code);
+    case '22008': // datetime_field_overflow — e.g. an unparseable dueDate
+      return new HttpError(400, 'Invalid date value', error.code);
     case 'P0002': // no_data_found — raised by accept_invitation
       return new HttpError(404, error.message || 'Not found', error.code);
     case 'PGRST116': // PostgREST: .single() matched zero rows
