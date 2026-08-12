@@ -42,7 +42,8 @@ Production-grade SaaS, not a demo — this becomes a live, sellable product.
 
 ## Deployment
 - Backend → Railway
-- Frontend → Vercel or Netlify
+- Frontend → Netlify (chosen over Vercel; account preference, not
+  technical — see README deployment section)
 - DB/Auth → Supabase
 - Verify end-to-end in a real deployed environment before marking any
   phase complete — local-only "done" doesn't count.

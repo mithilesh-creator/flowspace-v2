@@ -137,8 +137,14 @@ the linter is what caught it, and it will catch the next one.
 
 **Not done yet** — the last remaining item in Phase 1. Config is in place
 ([`backend/railway.json`](./backend/railway.json),
-[`frontend/vercel.json`](./frontend/vercel.json)); what is missing is
+[`frontend/netlify.toml`](./frontend/netlify.toml)); what is missing is
 accounts and credentials.
+
+Target: **backend → Railway, frontend → Netlify.** Nothing in the app
+favours Netlify over Vercel — it is a static Vite SPA calling an external
+API, with no SSR or edge functions — so this is an account-preference
+choice, not a technical one. Swapping to Vercel later means replacing
+`netlify.toml` with equivalent rewrite rules and nothing else.
 
 There is a deliberate ordering problem here: the backend needs the
 frontend's URL for CORS, and the frontend needs the backend's URL. Deploy
@@ -176,20 +182,24 @@ invitation has to be revoked and reissued.
 Leave `SUPABASE_SERVICE_ROLE_KEY` unset. Nothing in Phase 1 uses it, and
 an unset key cannot be misused.
 
-### 3. Frontend → Vercel
+### 3. Frontend → Netlify
 
-Root directory `frontend/`. `vercel.json` handles the build and the SPA
-rewrite — that rewrite is required, not cosmetic: without it
-`/accept-invite?token=…` is a 404 on a cold load, which breaks every
-invitation link.
+Base directory `frontend/`. `netlify.toml` supplies the build, the
+publish directory, and the SPA redirect.
+
+That redirect is required, not boilerplate: `/accept-invite?token=…` is a
+client-side route with no file behind it, so without it a cold load of an
+invitation link 404s and every invite is broken. Netlify checks the
+filesystem before applying redirects, so it does not shadow `/assets/*`.
 
 Set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_API_URL`
-(the Railway URL).
+(the Railway URL). Note these are baked in **at build time** — changing
+one requires a redeploy, not just a restart.
 
 ### 4. Close the loop
 
-Set the backend's `CORS_ORIGINS` and `APP_URL` to the real Vercel origin
-and redeploy.
+Set the backend's `CORS_ORIGINS` and `APP_URL` to the real Netlify origin
+and redeploy the backend.
 
 ### 5. Verify before calling Phase 1 done
 

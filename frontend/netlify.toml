@@ -1,0 +1,27 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA fallback. Load-bearing, not boilerplate: /accept-invite?token=…
+# is a client-side route with no file behind it, so without this a cold
+# load of an invitation link returns 404 and every invite is broken.
+#
+# Netlify checks the filesystem before applying redirects, so this does
+# not shadow /assets/* or any other real file.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# The app talks to Supabase and the Railway API over XHR/WebSocket, and
+# loads no third-party scripts, so the connect-src allowlist can stay
+# closed. Update it if either origin changes.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
