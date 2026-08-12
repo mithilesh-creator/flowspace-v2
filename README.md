@@ -26,12 +26,21 @@ docs/       architecture, socket contract, case studies
 
 ## Environment
 
-The dev database is a hosted Supabase project, `flowspace-v2-dev`
-(ref `hjylkhswlwqiwvztynkw`, ap-south-1, free tier).
+Two hosted Supabase projects, both ap-south-1, both free tier:
 
-> **Dev only.** The seed creates six fake accounts with a shared, known
-> password. This project must never be promoted to production — cut a
-> fresh one and apply migrations without the seed.
+| | ref | contents |
+|---|---|---|
+| `flowspace-v2-dev` | `hjylkhswlwqiwvztynkw` | migrations 0001–0008 **+ seed** |
+| `flowspace-v2-prod` | `ajkzoiqsvcibvcodkuzs` | migrations 0001–0008, **no seed**, zero rows |
+
+> **Never point a deployment at the dev project.** Its seed creates six
+> accounts sharing the password `password123`, published in this repo.
+
+Prod was verified empty and locked down on creation: 5 tables with RLS
+enabled *and* forced, 17 policies, and `anon` execute revoked on all
+helpers. Still to do there by hand, in the Supabase dashboard: set
+**Site URL** to the Netlify origin and enable **leaked-password
+protection**.
 
 `backend/.env` and `frontend/.env` are already populated and are
 gitignored. To recreate them, copy the `.env.example` next to each and
