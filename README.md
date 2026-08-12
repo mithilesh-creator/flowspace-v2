@@ -135,20 +135,68 @@ the linter is what caught it, and it will catch the next one.
 
 ## Deployment
 
-Not yet done. Per CLAUDE.md a phase is not complete until it has been
-verified in a real deployed environment.
+**Not done yet** — the last remaining item in Phase 1. Config is in place
+([`backend/railway.json`](./backend/railway.json),
+[`frontend/vercel.json`](./frontend/vercel.json)); what is missing is
+accounts and credentials.
 
-- **Supabase** — create a *separate* production project. Apply
-  `supabase/migrations/` in order. Do **not** run `seed.sql` against it.
-  Enable leaked-password protection in Auth settings (flagged by the
-  linter, off by default).
-- **Backend → Railway** — root `backend/`, start `npm start`, healthcheck
-  `/health`. Set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `CORS_ORIGINS` (the
-  deployed frontend origin; the server refuses to boot on `*` in
-  production), `NODE_ENV=production`.
-- **Frontend → Vercel/Netlify** — root `frontend/`, build `npm run build`,
-  output `dist`. Set the three `VITE_` variables. Then add that origin to
-  the backend's `CORS_ORIGINS` and redeploy the backend.
+There is a deliberate ordering problem here: the backend needs the
+frontend's URL for CORS, and the frontend needs the backend's URL. Deploy
+the backend first with a placeholder, then come back and fix it.
 
-Re-run both isolation suites against the deployed URLs before calling
-Phase 1 done.
+### 1. Production Supabase project
+
+A **new** project, not `flowspace-v2-dev`. Apply
+`supabase/migrations/0001`–`0008` in order. Do **not** run `seed.sql` —
+those are six accounts sharing a published password.
+
+In Auth settings: set **Site URL** to the deployed frontend origin (email
+confirmation links use it), and turn on **leaked-password protection**,
+which is off by default and flagged by the linter.
+
+### 2. Backend → Railway
+
+Root directory `backend/`. `railway.json` supplies the start command and
+`/health` check.
+
+| Variable | Value |
+|---|---|
+| `NODE_ENV` | `production` |
+| `SUPABASE_URL` | production project URL |
+| `SUPABASE_ANON_KEY` | production anon key |
+| `CORS_ORIGINS` | deployed frontend origin — **the server refuses to boot on `*`** |
+| `APP_URL` | deployed frontend origin |
+
+`APP_URL` is the one that is easy to miss. Invitation links are built
+from it and then **emailed to a human**, so if it is left unset it falls
+back to the first CORS origin — and every invitation you send points
+somewhere wrong. There is no way to fix a link already sent; the
+invitation has to be revoked and reissued.
+
+Leave `SUPABASE_SERVICE_ROLE_KEY` unset. Nothing in Phase 1 uses it, and
+an unset key cannot be misused.
+
+### 3. Frontend → Vercel
+
+Root directory `frontend/`. `vercel.json` handles the build and the SPA
+rewrite — that rewrite is required, not cosmetic: without it
+`/accept-invite?token=…` is a 404 on a cold load, which breaks every
+invitation link.
+
+Set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_API_URL`
+(the Railway URL).
+
+### 4. Close the loop
+
+Set the backend's `CORS_ORIGINS` and `APP_URL` to the real Vercel origin
+and redeploy.
+
+### 5. Verify before calling Phase 1 done
+
+```bash
+cd backend && PORT=443 npm test
+```
+
+Point the suites at the deployed URLs, then repeat by hand: sign up, two
+tenants, an invitation redeemed by a signed-out invitee, and a live board
+update between two clients.
