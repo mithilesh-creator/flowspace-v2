@@ -8,6 +8,10 @@ import { HttpError } from './lib/errors.js';
 import { attachRealtime } from './realtime/index.js';
 import { boardsRouter } from './routes/boards.js';
 import { healthRouter } from './routes/health.js';
+import {
+  invitationRedemptionRouter,
+  invitationsRouter,
+} from './routes/invitations.js';
 import { orgsRouter } from './routes/orgs.js';
 
 const app = express();
@@ -33,6 +37,8 @@ app.use(healthRouter);
 // other order makes orgsRouter run requireAuth on board requests before
 // failing to match and falling through, verifying the token twice.
 app.use('/api/orgs/:orgId/boards', boardsRouter);
+app.use('/api/orgs/:orgId/invitations', invitationsRouter);
+app.use('/api/invitations', invitationRedemptionRouter);
 app.use('/api/orgs', orgsRouter);
 
 app.use((_req, _res, next) => {

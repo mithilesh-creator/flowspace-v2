@@ -14,7 +14,16 @@ export function ProtectedRoute({ children }) {
   }
 
   if (!session) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+    // pathname + search, not pathname alone: an invitation link carries
+    // its token in the query string, and dropping it here would send the
+    // invitee to an empty /accept-invite after they sign in.
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: `${location.pathname}${location.search}` }}
+      />
+    );
   }
 
   return children;

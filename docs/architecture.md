@@ -116,6 +116,15 @@ membership round trip, and the client now also refetches the board list
 on `org:joined`. Fine at Phase 1 scale; revisit if a mass reconnect ever
 becomes a thundering herd.
 
+**A removed member keeps their socket in the room.** Removal deletes the
+membership, so RLS blocks them from reading anything over REST
+immediately — but their existing socket stays joined to `org:<uuid>` and
+keeps receiving broadcasts until it disconnects or switches org. Closing
+it needs a user-id → socket-id index so the server can evict them.
+Deferred, and the only reason it is acceptable now is that the window is
+short and removal is rare. Fix this before the client portal ships, where
+revoking an external party's access is the entire point.
+
 **Broadcasts are at-most-once.** Socket.io does not replay missed
 events, and there are two windows where one is silently lost: the
 polling→WebSocket upgrade just after connecting, and any brief

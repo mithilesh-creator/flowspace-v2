@@ -44,6 +44,16 @@ export const env = {
     .filter(Boolean),
 };
 
+// Where invitation links point. Defaults to the first allowed origin,
+// which is right in every environment we have — but it is a separate
+// setting because an invite URL is emailed to a human and outlives the
+// request, so it must never accidentally inherit a localhost origin in
+// production.
+env.appUrl = optional('APP_URL', env.corsOrigins[0] ?? 'http://localhost:5173').replace(
+  /\/+$/,
+  ''
+);
+
 if (env.isProduction && env.corsOrigins.includes('*')) {
   throw new Error('CORS_ORIGINS must not be "*" in production.');
 }

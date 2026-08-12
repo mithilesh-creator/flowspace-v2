@@ -3,12 +3,17 @@
 Multi-tenant SaaS project management with real-time Kanban.
 Project guide and conventions: [CLAUDE.md](./CLAUDE.md).
 
-**Phase 1 status: verified end to end** against a live hosted Supabase
-project (12 Aug 2026). 17 database isolation checks and 9 realtime
-isolation checks pass, the production frontend build succeeds, and
-sign-up, sign-in, workspace switching, live board updates across separate
-clients, and read-only client access are confirmed in the browser.
-Not yet deployed — backend and frontend still run locally.
+**Phase 1 status: feature-complete, verified locally, not yet deployed.**
+
+38 automated checks pass against a live hosted Supabase project (17
+database isolation, 12 invitation flow, 9 realtime isolation), and the
+production frontend build succeeds. Confirmed in the browser: sign-up,
+sign-in, workspace switching, live board updates across separate clients,
+read-only `client` access, and the full invitation path — a signed-out
+invitee clicking a link, signing in, and landing in the workspace with
+the role they were given.
+
+Deployment to Railway/Vercel is the one thing left.
 
 ```
 frontend/   React + Vite
@@ -87,6 +92,16 @@ Without `psql` installed, the same assertions can be run through the
 Supabase SQL editor or MCP connector by wrapping them in a harness
 function; see the file header.
 
+### Invitations — 12 checks
+
+The API layer in front of `accept_invitation()`: who may issue a token,
+who may redeem it, single use, revocation, and that listing invitations
+never returns `token_hash`.
+
+```bash
+cd backend && npm run test:invitations
+```
+
 ### Realtime — 9 checks
 
 Three concurrent authenticated socket clients across two tenants.
@@ -101,6 +116,12 @@ room; **tenant B is refused entry to tenant A's room when it asks by
 uuid**; a teammate receives the broadcast while the other tenant stays
 silent through the write; the author does not get its own echo;
 cross-tenant REST reads 404; deletes broadcast.
+
+Both backend suites at once:
+
+```bash
+cd backend && npm test
+```
 
 ### After any DDL change
 

@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 
 import { useAuth } from '../context/AuthContext.jsx';
 
 export function Signup() {
   const { session, signUp } = useAuth();
+  const location = useLocation();
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -13,7 +14,9 @@ export function Signup() {
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  if (session) return <Navigate to="/boards" replace />;
+  // Honour `from` so a new user who arrived via an invitation link is
+  // returned to it once their account exists.
+  if (session) return <Navigate to={location.state?.from ?? '/boards'} replace />;
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -49,7 +52,9 @@ export function Signup() {
             finish creating your account, then sign in.
           </p>
           <p className="muted">
-            <Link to="/login">Back to sign in</Link>
+            <Link to="/login" state={location.state}>
+              Back to sign in
+            </Link>
           </p>
         </div>
       </div>

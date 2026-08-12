@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { CreateOrg } from '../components/CreateOrg.jsx';
+import { MembersPanel } from '../components/MembersPanel.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useOrg } from '../context/OrgContext.jsx';
 import { useSocket } from '../hooks/useSocket.js';
@@ -306,6 +307,8 @@ export function Boards() {
             ))}
           </ul>
         )}
+
+        <MembersPanel orgId={activeOrgId} role={role} socket={socket} />
 
         {lastEvent && (
           <p className="muted small event-log">last realtime event: {lastEvent}</p>

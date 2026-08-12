@@ -238,6 +238,99 @@ button.link {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* ---------- people / invitations ---------- */
+
+.members {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.section-title {
+  font-size: 0.95rem;
+  margin: 0 0 0.75rem;
+}
+
+.section-title.small {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 1.25rem;
+}
+
+.people-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.people-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.8rem;
+}
+
+.people-list li > span:first-child {
+  flex: 1;
+}
+
+.role-chip {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+}
+
+.invite-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.invite-form input {
+  flex: 1;
+  min-width: 12rem;
+}
+
+.invite-result {
+  margin-top: 0.9rem;
+  padding: 0.8rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.invite-result p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.invite-result code {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+}
+
 /* ---------- connection badge ---------- */
 
 .badge {

@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 
 import { ProtectedRoute } from './components/ProtectedRoute.jsx';
 import { OrgProvider } from './context/OrgContext.jsx';
+import { AcceptInvite } from './routes/AcceptInvite.jsx';
 import { Boards } from './routes/Boards.jsx';
 import { Login } from './routes/Login.jsx';
 import { Signup } from './routes/Signup.jsx';
@@ -21,6 +22,18 @@ export function App() {
             <OrgProvider>
               <Boards />
             </OrgProvider>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Outside OrgProvider on purpose: accepting an invitation changes
+          which orgs exist for this user, so the provider should mount
+          fresh on /boards afterwards rather than hold a stale list. */}
+      <Route
+        path="/accept-invite"
+        element={
+          <ProtectedRoute>
+            <AcceptInvite />
           </ProtectedRoute>
         }
       />

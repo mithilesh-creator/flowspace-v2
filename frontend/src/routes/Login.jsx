@@ -61,7 +61,12 @@ export function Login() {
         </button>
 
         <p className="muted">
-          No account? <Link to="/signup">Create one</Link>
+          No account?{' '}
+          {/* Carry `from` across to signup so an invitee who has no
+              account yet still lands on their invitation afterwards. */}
+          <Link to="/signup" state={location.state}>
+            Create one
+          </Link>
         </p>
       </form>
     </div>

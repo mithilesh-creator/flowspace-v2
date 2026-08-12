@@ -10,7 +10,9 @@
   "scripts": {
     "dev": "node --watch-path=./src src/index.js",
     "start": "node src/index.js",
-    "test:realtime": "node --env-file=.env tests/realtime-isolation.test.mjs"
+    "test:realtime": "node --env-file=.env tests/realtime-isolation.test.mjs",
+    "test:invitations": "node --env-file=.env tests/invitations.test.mjs",
+    "test": "npm run test:realtime && npm run test:invitations"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

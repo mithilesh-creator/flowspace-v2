@@ -66,7 +66,24 @@ rather than reconnecting, so the user does not drop out of their room.
 | `board:updated` | `{ orgId, board }` | Everyone in `org:<orgId>`. |
 | `board:deleted` | `{ orgId, boardId }` | Everyone in `org:<orgId>`. |
 | `board:pong` | `{ orgId, userId, at }` | Everyone in `org:<orgId>`. |
+| `member:joined` | `{ orgId, membership, profile }` | Everyone in `org:<orgId>`, when an invitation is redeemed. |
+| `member:removed` | `{ orgId, membershipId, userId }` | Everyone in `org:<orgId>`, when a member is removed or leaves. |
 | `error:unauthorized` | `{ event, orgId, message }` | The offending socket. |
+
+`member:joined` is emitted from `POST /api/invitations/accept` *after* the
+membership is committed, and inside a try/catch: a realtime failure must
+never roll back a join that already succeeded. The new member is not yet
+in the room when it fires — it exists to update the people list for those
+already there.
+
+`member:removed` has a known limitation: the removed user's own socket is
+still in the org room and will keep receiving that tenant's broadcasts
+until they disconnect or switch orgs. RLS already stops them reading
+anything over REST, so this leaks only events emitted in the window
+between removal and disconnect — but it is a real gap. The fix is for
+the server to force that socket out of the room on removal, which needs
+a socket-id-by-user index. Deliberately deferred; see
+docs/architecture.md.
 
 Every tenant-scoped payload carries `orgId`. Clients should still check it
 before applying the event: during an org switch, an in-flight event from

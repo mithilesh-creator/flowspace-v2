@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { HttpError, asyncRoute, fromPostgrestError } from '../lib/errors.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireOrgMember } from '../middleware/tenant.js';
+import { emitToOrg } from '../realtime/emitter.js';
 
 export const orgsRouter = Router();
 
@@ -101,6 +102,42 @@ orgsRouter.get(
     if (error) throw fromPostgrestError(error, 'Could not load members');
 
     res.json({ members: data });
+  })
+);
+
+/**
+ * DELETE /api/orgs/:orgId/members/:membershipId
+ *
+ * Admins remove people; anyone may remove themselves (leave). Both are
+ * already expressed in the memberships DELETE policy, so this route does
+ * not re-check the role — it lets the database decide and translates the
+ * refusal. The last-owner trigger also applies, surfacing as 409.
+ */
+orgsRouter.delete(
+  '/:orgId/members/:membershipId',
+  requireOrgMember,
+  asyncRoute(async (req, res) => {
+    const { data, error } = await req.supabase
+      .from('memberships')
+      .delete()
+      .eq('id', req.params.membershipId)
+      .eq('org_id', req.orgId)
+      .select('id, user_id')
+      .maybeSingle();
+
+    if (error) throw fromPostgrestError(error, 'Could not remove member');
+    if (!data) throw new HttpError(404, 'Member not found');
+
+    try {
+      emitToOrg(req.orgId, 'member:removed', {
+        membershipId: data.id,
+        userId: data.user_id,
+      });
+    } catch {
+      // Already committed; realtime is best-effort.
+    }
+
+    res.status(204).end();
   })
 );
 

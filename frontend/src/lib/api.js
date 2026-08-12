@@ -94,4 +94,29 @@ export const api = {
       socketId,
       method: 'DELETE',
     }),
+
+  listMembers: (token, orgId) => apiFetch(`/api/orgs/${orgId}/members`, { token }),
+
+  listInvitations: (token, orgId) =>
+    apiFetch(`/api/orgs/${orgId}/invitations`, { token }),
+
+  createInvitation: (token, orgId, { email, role }) =>
+    apiFetch(`/api/orgs/${orgId}/invitations`, {
+      token,
+      method: 'POST',
+      body: JSON.stringify({ email, role }),
+    }),
+
+  revokeInvitation: (token, orgId, invitationId) =>
+    apiFetch(`/api/orgs/${orgId}/invitations/${invitationId}`, {
+      token,
+      method: 'DELETE',
+    }),
+
+  acceptInvitation: (token, inviteToken) =>
+    apiFetch('/api/invitations/accept', {
+      token,
+      method: 'POST',
+      body: JSON.stringify({ token: inviteToken }),
+    }),
 };
