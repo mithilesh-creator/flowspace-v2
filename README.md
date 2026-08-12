@@ -7,29 +7,35 @@ Project guide and conventions: [CLAUDE.md](./CLAUDE.md).
 
 | | |
 |---|---|
-| Frontend | [flowspace-v2.netlify.app](https://flowspace-v2.netlify.app) — **deployed**, but returns 401: the NOVAxis team enforces SSO login on all projects |
-| Backend | [backend-production-8d147.up.railway.app](https://backend-production-8d147.up.railway.app) — configured, **never built** |
+| Frontend | [flowspace-v2.netlify.app](https://flowspace-v2.netlify.app) — **live** |
+| Backend | [backend-production-8d147.up.railway.app](https://backend-production-8d147.up.railway.app) — **live**, healthcheck passing |
 | Database | Supabase `flowspace-v2-prod` — all 10 migrations applied |
 | Repo | `mithilesh-creator/flowspace-v2` (private) |
 
-**Two things block a live stack**, both needing account-owner access:
+Verified against the deployed stack:
 
-1. **Railway cannot see the repo.** Railway's own agent confirmed it —
-   `githubRepoBranchesTool` returns `accessible: false` for
-   `mithilesh-creator/flowspace-v2`. The GitHub App has no permission on
-   a private repo created after it was authorised. Grant it at
-   <https://github.com/apps/railway/installations/new>, then the first
-   build can be triggered. The service config is otherwise complete:
-   source, root `/backend`, healthcheck, restart policy, and all five
-   variables pointing at prod.
-2. **Netlify enforces SSO team login**, so the deployed site 401s for the
-   public. It is a team-wide control (Netlify → NOVAxis → Access
-   control), not per-site.
+- `/health` returns ok; `/api/orgs` without a token returns 401.
+- CORS echoes `https://flowspace-v2.netlify.app` and returns an empty
+  allow-origin for any other origin.
+- Every SPA deep link resolves — `/login`, `/signup`, `/boards`,
+  `/boards/:id`, and `/accept-invite?token=…` — while `/assets/*` is
+  still served as a real file rather than rewritten to `index.html`.
+- `X-Frame-Options`, `X-Content-Type-Options` and `Referrer-Policy` are
+  applied from `netlify.toml`.
+- The live bundle carries the prod Supabase ref and the Railway API URL,
+  with no localhost and no dev-project reference.
 
-Frontend builds are currently uploaded pre-built from `frontend/`, using
-`frontend/.env.production` (gitignored) rather than Netlify's own
-environment variables — the site is not connected to the repo, so
-Netlify's build-time variables are not consulted.
+**What deployment does NOT prove.** The 39 automated checks cannot run
+against prod, because prod deliberately has no seed — and the suites are
+built on seeded fixtures across two tenants. They pass against
+`flowspace-v2-dev`. Prod currently has zero users, so sign-up, tenant
+isolation, invitations and realtime are unexercised there until a real
+account exists.
+
+Frontend builds are uploaded pre-built from `frontend/`, using
+`frontend/.env.production` (gitignored). The site is not connected to the
+repo, so Netlify's own build-time variables are not consulted — worth
+knowing before wiring up git-push deploys.
 
 **Phase 1 status: feature-complete, verified locally, not yet deployed.**
 
