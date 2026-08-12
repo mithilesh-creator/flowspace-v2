@@ -1,7 +1,16 @@
 # Flowspace v2
 
+[![Netlify Status](https://api.netlify.com/api/v1/badges/f84dac52-1e23-4dd1-ab5c-5b7a5747688b/deploy-status)](https://app.netlify.com/projects/flowspace-v2/deploys)
+
 Multi-tenant SaaS project management with real-time Kanban.
 Project guide and conventions: [CLAUDE.md](./CLAUDE.md).
+
+| | |
+|---|---|
+| Frontend | [flowspace-v2.netlify.app](https://flowspace-v2.netlify.app) — site created, **no deploy yet** |
+| Backend | [backend-production-8d147.up.railway.app](https://backend-production-8d147.up.railway.app) — service configured, **no build yet** |
+| Database | Supabase `flowspace-v2-prod` — all 10 migrations applied |
+| Repo | `mithilesh-creator/flowspace-v2` (private) |
 
 **Phase 1 status: feature-complete, verified locally, not yet deployed.**
 
