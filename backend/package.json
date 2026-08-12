@@ -1,0 +1,25 @@
+{
+  "name": "flowspace-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Flowspace v2 API — Express + Socket.io over Supabase",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node --watch-path=./src src/index.js",
+    "start": "node src/index.js",
+    "test:realtime": "node --env-file=.env tests/realtime-isolation.test.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
+  }
+}
