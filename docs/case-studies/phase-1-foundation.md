@@ -41,7 +41,7 @@ each time rather than trusted from the browser.
 ## How it was proven
 
 Two separate companies were set up with overlapping staff, including one
-person deliberately placed in both. Twenty-five automated checks then
+person deliberately placed in both. Thirty-eight automated checks then
 attempted to cross the line in every direction available: reading the
 other company's boards, writing into them, moving a board between
 companies, promoting yourself to a higher access level, removing the last
@@ -53,7 +53,11 @@ separately: three real users connect at once, and the suite confirms that
 the outside company is refused access to the other's update stream and
 receives nothing at all while that company is actively making changes.
 
-All twenty-five pass, and both suites are written to run on every change.
+Joining a workspace is covered too: the checks confirm an invitation can
+only be redeemed by the person it was addressed to, only once, and not
+after it has been withdrawn.
+
+All thirty-eight pass, and every suite is written to run on every change.
 
 ## Status
 

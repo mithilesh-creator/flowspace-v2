@@ -13,14 +13,37 @@ read-only `client` access, and the full invitation path — a signed-out
 invitee clicking a link, signing in, and landing in the workspace with
 the role they were given.
 
-Deployment to Railway/Vercel is the one thing left.
+Deployment to Railway/Netlify is the one thing left.
+
+**Phase 2 status: in progress.** Kanban lists and cards, built in parallel
+by two engineers against the frozen spec in
+[`docs/phase-2-contract.md`](./docs/phase-2-contract.md). Not started on
+disk at the time of writing — no `0009`/`0010` migrations, no
+`backend/src/routes/lists.js` or `cards.js`, no board-detail route. No
+Phase 2 test coverage exists yet, so the 38 checks above cover Phase 1
+only. Acceptance criteria:
+[`docs/integration-checklist.md`](./docs/integration-checklist.md).
+
+Full phase-by-phase status:
+[`docs/product-roadmap.md`](./docs/product-roadmap.md).
 
 ```
 frontend/   React + Vite
 backend/    Express + Socket.io
 supabase/   migrations, RLS policies, seed, isolation tests
-docs/       architecture, socket contract, case studies
+docs/       architecture, socket contract, roadmap, checklist, case studies
 ```
+
+### Docs
+
+| File | What it is |
+|---|---|
+| [`docs/architecture.md`](./docs/architecture.md) | How the tenant boundary works, and the known gaps |
+| [`docs/socket-events.md`](./docs/socket-events.md) | The Socket.io event contract |
+| [`docs/phase-2-contract.md`](./docs/phase-2-contract.md) | Phase 2 spec — frozen while it is being built |
+| [`docs/product-roadmap.md`](./docs/product-roadmap.md) | Five phases, honest status, gap deadlines |
+| [`docs/integration-checklist.md`](./docs/integration-checklist.md) | The acceptance gate for Phase 2 |
+| [`docs/case-studies/`](./docs/case-studies/) | Catalogue-ready summaries (Phase 2 is a DRAFT) |
 
 ---
 
@@ -32,6 +55,9 @@ Two hosted Supabase projects, both ap-south-1, both free tier:
 |---|---|---|
 | `flowspace-v2-dev` | `hjylkhswlwqiwvztynkw` | migrations 0001–0008 **+ seed** |
 | `flowspace-v2-prod` | `ajkzoiqsvcibvcodkuzs` | migrations 0001–0008, **no seed**, zero rows |
+
+Phase 2 adds migrations `0009`/`0010` (lists, cards). Apply them to dev
+first; prod gets them as part of the deployment step below.
 
 > **Never point a deployment at the dev project.** Its seed creates six
 > accounts sharing the password `password123`, published in this repo.
@@ -132,6 +158,19 @@ Both backend suites at once:
 cd backend && npm test
 ```
 
+Note `npm test` runs the realtime and invitation suites only — the
+database isolation suite is `psql`-driven and has no npm script. "npm test
+green" is not "the isolation suites pass"; run both.
+
+### Phase 2 extends both suites
+
+Lists and cards need their own assertions in `supabase/tests/rls.test.sql`
+and `backend/tests/realtime-isolation.test.mjs` — including that a card
+cannot be moved into another tenant's list, and that tenant B hears
+nothing while tenant A drags. The counts above will change when they land;
+update them here at the same time. See
+[`docs/integration-checklist.md`](./docs/integration-checklist.md).
+
 ### After any DDL change
 
 Run the Supabase database linter. Migration 0008 exists because
@@ -161,8 +200,9 @@ the backend first with a placeholder, then come back and fix it.
 
 ### 1. Production Supabase project
 
-A **new** project, not `flowspace-v2-dev`. Apply
-`supabase/migrations/0001`–`0008` in order. Do **not** run `seed.sql` —
+A **new** project, not `flowspace-v2-dev`. Apply every migration in
+`supabase/migrations/` in order — `0001`–`0008` today, plus `0009`/`0010`
+once Phase 2 lands. Do **not** run `seed.sql` —
 those are six accounts sharing a published password.
 
 In Auth settings: set **Site URL** to the deployed frontend origin (email
@@ -215,6 +255,12 @@ and redeploy the backend.
 ```bash
 cd backend && PORT=443 npm test
 ```
+
+> Unverified: both suites build their base URL as
+> `http://localhost:${PORT}`, so `PORT` alone will not point them at a
+> deployed host. Pointing them at Railway needs an env override the
+> suites do not currently read. Check this before relying on the command
+> above.
 
 Point the suites at the deployed URLs, then repeat by hand: sign up, two
 tenants, an invitation redeemed by a signed-out invitee, and a live board

@@ -95,6 +95,81 @@ export const api = {
       method: 'DELETE',
     }),
 
+  // ------------------------------------------------------------------
+  // Lists & cards. Everything hangs off the board, and both `orgId` and
+  // `boardId` travel in the path — the server takes them from the
+  // authorised route params and never from a body, so sending them twice
+  // would just create a second, untrusted copy.
+  // ------------------------------------------------------------------
+
+  /** Board with its lists and cards nested and ordered by position. */
+  getBoard: (token, orgId, boardId) =>
+    apiFetch(`/api/orgs/${orgId}/boards/${boardId}`, { token }),
+
+  createList: (token, orgId, boardId, { title, socketId }) =>
+    apiFetch(`/api/orgs/${orgId}/boards/${boardId}/lists`, {
+      token,
+      socketId,
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    }),
+
+  renameList: (token, orgId, boardId, listId, { title, socketId }) =>
+    apiFetch(`/api/orgs/${orgId}/boards/${boardId}/lists/${listId}`, {
+      token,
+      socketId,
+      method: 'PATCH',
+      body: JSON.stringify({ title }),
+    }),
+
+  deleteList: (token, orgId, boardId, listId, { socketId } = {}) =>
+    apiFetch(`/api/orgs/${orgId}/boards/${boardId}/lists/${listId}`, {
+      token,
+      socketId,
+      method: 'DELETE',
+    }),
+
+  // `position` is computed client-side (see lib/board.js). The server
+  // stores it as given rather than recomputing the ordering.
+  moveList: (token, orgId, boardId, listId, { position, socketId }) =>
+    apiFetch(`/api/orgs/${orgId}/boards/${boardId}/lists/${listId}/move`, {
+      token,
+      socketId,
+      method: 'POST',
+      body: JSON.stringify({ position }),
+    }),
+
+  createCard: (token, orgId, boardId, { listId, title, description, socketId }) =>
+    apiFetch(`/api/orgs/${orgId}/boards/${boardId}/cards`, {
+      token,
+      socketId,
+      method: 'POST',
+      body: JSON.stringify({ listId, title, description }),
+    }),
+
+  updateCard: (token, orgId, boardId, cardId, { socketId, ...fields }) =>
+    apiFetch(`/api/orgs/${orgId}/boards/${boardId}/cards/${cardId}`, {
+      token,
+      socketId,
+      method: 'PATCH',
+      body: JSON.stringify(fields),
+    }),
+
+  deleteCard: (token, orgId, boardId, cardId, { socketId } = {}) =>
+    apiFetch(`/api/orgs/${orgId}/boards/${boardId}/cards/${cardId}`, {
+      token,
+      socketId,
+      method: 'DELETE',
+    }),
+
+  moveCard: (token, orgId, boardId, cardId, { listId, position, socketId }) =>
+    apiFetch(`/api/orgs/${orgId}/boards/${boardId}/cards/${cardId}/move`, {
+      token,
+      socketId,
+      method: 'POST',
+      body: JSON.stringify({ listId, position }),
+    }),
+
   listMembers: (token, orgId) => apiFetch(`/api/orgs/${orgId}/members`, { token }),
 
   listInvitations: (token, orgId) =>

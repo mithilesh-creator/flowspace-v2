@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute.jsx';
 import { OrgProvider } from './context/OrgContext.jsx';
 import { AcceptInvite } from './routes/AcceptInvite.jsx';
+import { Board } from './routes/Board.jsx';
 import { Boards } from './routes/Boards.jsx';
 import { Login } from './routes/Login.jsx';
 import { Signup } from './routes/Signup.jsx';
@@ -21,6 +22,19 @@ export function App() {
           <ProtectedRoute>
             <OrgProvider>
               <Boards />
+            </OrgProvider>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* The board detail view needs the same org context: which workspace
+          is active decides the :orgId every list/card call is scoped to. */}
+      <Route
+        path="/boards/:boardId"
+        element={
+          <ProtectedRoute>
+            <OrgProvider>
+              <Board />
             </OrgProvider>
           </ProtectedRoute>
         }

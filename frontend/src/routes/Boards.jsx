@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { CreateOrg } from '../components/CreateOrg.jsx';
 import { MembersPanel } from '../components/MembersPanel.jsx';
@@ -278,12 +279,17 @@ export function Boards() {
             {boards.map((board) => (
               <li key={board.id} className="card board">
                 <div>
-                  <h2>{board.title}</h2>
+                  <h2>
+                    <Link to={`/boards/${board.id}`}>{board.title}</Link>
+                  </h2>
                   <p className="muted small">
                     Updated {new Date(board.updated_at).toLocaleString()}
                   </p>
                 </div>
                 <div className="board-actions">
+                  <Link className="button-link" to={`/boards/${board.id}`}>
+                    Open
+                  </Link>
                   {canWrite && (
                     <button
                       type="button"

@@ -4,6 +4,8 @@ import { HttpError, asyncRoute, fromPostgrestError } from '../lib/errors.js';
 import { emitToOrg } from '../realtime/emitter.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireOrgMember, requireOrgRole } from '../middleware/tenant.js';
+import { cardsRouter } from './cards.js';
+import { listsRouter } from './lists.js';
 
 // mergeParams so :orgId from the parent mount is visible here.
 export const boardsRouter = Router({ mergeParams: true });
@@ -123,3 +125,22 @@ boardsRouter.delete(
     res.status(204).end();
   })
 );
+
+/**
+ * Phase 2 — lists and cards hang off a board.
+ *
+ * Mounted here rather than beside boardsRouter in index.js, for the reason
+ * index.js already documents one level up: a Router's `.use()` middleware
+ * runs for every path beneath its mount point. Two sibling mounts under
+ * /api/orgs/:orgId/boards would mean every card drag ran requireAuth and a
+ * current_org_role() round trip twice — once on the way through this
+ * router, once inside the one that finally matched. Nesting them makes the
+ * boardsRouter.use() above the single place either happens.
+ *
+ * Last in the file, and cards before lists, so the more specific path wins
+ * first: this router's own PATCH/DELETE /:boardId still match ahead of
+ * listsRouter's mount at /:boardId, and /:boardId/cards never has to fall
+ * through listsRouter to get where it is going.
+ */
+boardsRouter.use('/:boardId/cards', cardsRouter);
+boardsRouter.use('/:boardId', listsRouter);
