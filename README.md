@@ -7,10 +7,29 @@ Project guide and conventions: [CLAUDE.md](./CLAUDE.md).
 
 | | |
 |---|---|
-| Frontend | [flowspace-v2.netlify.app](https://flowspace-v2.netlify.app) — site created, **no deploy yet** |
-| Backend | [backend-production-8d147.up.railway.app](https://backend-production-8d147.up.railway.app) — service configured, **no build yet** |
+| Frontend | [flowspace-v2.netlify.app](https://flowspace-v2.netlify.app) — **deployed**, but returns 401: the NOVAxis team enforces SSO login on all projects |
+| Backend | [backend-production-8d147.up.railway.app](https://backend-production-8d147.up.railway.app) — configured, **never built** |
 | Database | Supabase `flowspace-v2-prod` — all 10 migrations applied |
 | Repo | `mithilesh-creator/flowspace-v2` (private) |
+
+**Two things block a live stack**, both needing account-owner access:
+
+1. **Railway cannot see the repo.** Railway's own agent confirmed it —
+   `githubRepoBranchesTool` returns `accessible: false` for
+   `mithilesh-creator/flowspace-v2`. The GitHub App has no permission on
+   a private repo created after it was authorised. Grant it at
+   <https://github.com/apps/railway/installations/new>, then the first
+   build can be triggered. The service config is otherwise complete:
+   source, root `/backend`, healthcheck, restart policy, and all five
+   variables pointing at prod.
+2. **Netlify enforces SSO team login**, so the deployed site 401s for the
+   public. It is a team-wide control (Netlify → NOVAxis → Access
+   control), not per-site.
+
+Frontend builds are currently uploaded pre-built from `frontend/`, using
+`frontend/.env.production` (gitignored) rather than Netlify's own
+environment variables — the site is not connected to the repo, so
+Netlify's build-time variables are not consulted.
 
 **Phase 1 status: feature-complete, verified locally, not yet deployed.**
 
