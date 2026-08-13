@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+
+import { cardAssigneeId, cardDueDate } from '../lib/board.js';
 
 /**
  * Edit panel for a single card.
@@ -6,15 +8,59 @@ import { useEffect, useRef, useState } from 'react';
  * Sends only the fields the user actually changed. `PATCH /cards/:cardId`
  * takes `{title?, description?, assigneeId?, dueDate?}` — sending an
  * unchanged `assigneeId` alongside a title edit would make a rename race
- * with someone else's reassignment and win for no reason.
+ * with someone else's reassignment and win for no reason. Nothing else is
+ * ever put in the body: `board_id` in particular travels in the URL, and
+ * the server reads it from the authorised route param.
  */
-export function CardEditor({ card, members, onSave, onCancel, onDelete }) {
+export function CardEditor({
+  card,
+  members,
+  membersStatus = 'ready',
+  onSave,
+  onCancel,
+  onDelete,
+}) {
+  const currentAssignee = cardAssigneeId(card) ?? '';
+
   const [title, setTitle] = useState(card.title ?? '');
   const [description, setDescription] = useState(card.description ?? '');
-  const [assigneeId, setAssigneeId] = useState(card.assignee_id ?? '');
-  const [dueDate, setDueDate] = useState(toDateInput(card.due_date));
+  const [assigneeId, setAssigneeId] = useState(currentAssignee);
+  const [dueDate, setDueDate] = useState(toDateInput(cardDueDate(card)));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+
+  // H6 — the picker offers org members and nothing else, because
+  // `cards(org_id, assignee_id)` is now a foreign key onto `memberships`
+  // and anyone else is a save the database will refuse.
+  //
+  // The exception is the card's *current* assignee when they have since
+  // been removed from the workspace: the row still points at them, and
+  // silently dropping them from the picker would turn "save the title"
+  // into "unassign this card" without anyone choosing that. Keep them,
+  // labelled, so the user can see the situation and decide.
+  const options = useMemo(() => {
+    const rows = members.map((m) => ({
+      value: memberUserId(m),
+      label: memberOptionLabel(m),
+      stale: false,
+    }));
+
+    const orphaned =
+      currentAssignee &&
+      membersStatus === 'ready' &&
+      !rows.some((o) => o.value === currentAssignee);
+
+    if (orphaned) {
+      rows.unshift({
+        value: currentAssignee,
+        label: 'Former member — no longer in this workspace',
+        stale: true,
+      });
+    }
+    return rows;
+  }, [members, membersStatus, currentAssignee]);
+
+  const staleAssignee = options.some((o) => o.stale && o.value === assigneeId);
 
   const titleRef = useRef(null);
   useEffect(() => titleRef.current?.focus(), []);
@@ -37,10 +83,10 @@ export function CardEditor({ card, members, onSave, onCancel, onDelete }) {
     if (description !== (card.description ?? '')) {
       patch.description = description.trim() ? description : null;
     }
-    if (assigneeId !== (card.assignee_id ?? '')) {
+    if (assigneeId !== currentAssignee) {
       patch.assigneeId = assigneeId || null;
     }
-    if (dueDate !== toDateInput(card.due_date)) {
+    if (dueDate !== toDateInput(cardDueDate(card))) {
       patch.dueDate = fromDateInput(dueDate);
     }
 
@@ -98,11 +144,16 @@ export function CardEditor({ card, members, onSave, onCancel, onDelete }) {
         <div className="field-row">
           <label>
             Assignee
-            <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
+            <select
+              value={assigneeId}
+              aria-describedby={staleAssignee ? 'assignee-note' : undefined}
+              disabled={membersStatus === 'loading'}
+              onChange={(e) => setAssigneeId(e.target.value)}
+            >
               <option value="">Unassigned</option>
-              {members.map((m) => (
-                <option key={memberUserId(m)} value={memberUserId(m)}>
-                  {memberLabel(m)}
+              {options.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </select>
@@ -117,6 +168,19 @@ export function CardEditor({ card, members, onSave, onCancel, onDelete }) {
             />
           </label>
         </div>
+
+        {membersStatus === 'error' && (
+          <p className="muted small">
+            Could not load the workspace members, so the assignee list is
+            incomplete. Reload before changing it.
+          </p>
+        )}
+        {staleAssignee && (
+          <p id="assignee-note" className="muted small">
+            This card is assigned to someone who has left the workspace. Saving
+            keeps them; pick someone else or Unassigned to clear it.
+          </p>
+        )}
 
         {error && <p className="error">{error}</p>}
 
@@ -146,6 +210,20 @@ export function memberUserId(member) {
 
 export function memberLabel(member) {
   return member.profile?.full_name || member.profile?.email || 'Unknown user';
+}
+
+/**
+ * Label for a row in the assignee picker.
+ *
+ * Distinct from memberLabel, which is the bare name shown on a card chip
+ * where space is tight and the role would be noise. In an open dropdown
+ * the role is what disambiguates two people with similar names, and it
+ * makes it obvious at a glance that you are about to assign work to a
+ * `client` — who cannot act on it, since the portal role is read-only.
+ */
+export function memberOptionLabel(member) {
+  const name = memberLabel(member);
+  return member.role ? `${name} (${member.role})` : name;
 }
 
 function toDateInput(value) {

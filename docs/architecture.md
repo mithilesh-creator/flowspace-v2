@@ -84,21 +84,33 @@ user request silently removes tenant isolation from that path.
 
 Three places, and they must agree:
 
-1. `supabase/migrations/0005_rls_policies.sql` and `0007_boards.sql` — the
-   real one.
+1. `supabase/migrations/0005_rls_policies.sql`, `0007_boards.sql` and
+   `0009_lists_and_cards.sql` — the real one.
 2. `backend/src/realtime/rooms.js` + `emitter.js` — realtime, which the
    database cannot police.
 3. `backend/src/middleware/tenant.js` — early rejection only.
 
-Both (1) and (2) have automated coverage against two live tenants:
+There is now a fourth mechanism that is stronger than any of them:
+**composite foreign keys**. `lists(board_id, org_id) → boards(id, org_id)`
+and `cards(list_id, board_id, org_id) → lists(...)` mean a cross-tenant
+list or card is not forbidden, it is *unrepresentable*. Since 0011,
+`cards(org_id, assignee_id) → memberships(org_id, user_id)` does the same
+for assignment. Prefer this shape over a policy whenever the invariant can
+be expressed as a key — a policy can be forgotten on a new table, a
+foreign key cannot.
 
-- `supabase/tests/rls.test.sql` — 17 assertions at the database level.
-- `backend/tests/realtime-isolation.test.mjs` — 9 assertions with three
-  concurrent authenticated socket clients, asserting that tenant B is
-  refused entry to tenant A's room and stays silent while tenant A
-  writes.
+All of it has automated coverage against two live tenants:
 
-Run both before merging anything that touches policies, rooms, or the
+- `supabase/tests/rls.test.sql` — database level, T01 onward.
+- `backend/tests/realtime-isolation.test.mjs` — 9 assertions, three
+  concurrent socket clients.
+- `backend/tests/kanban-isolation.test.mjs` — 18 assertions across lists
+  and cards.
+- `backend/tests/hardening.test.mjs` — 20 assertions covering assignment,
+  cross-board moves, rebalancing and socket eviction.
+
+`cd backend && npm test` runs all four (59 checks). Run them, plus the SQL
+suite, before merging anything that touches policies, rooms, or the
 emitter.
 
 ## Known gaps
@@ -116,14 +128,25 @@ membership round trip, and the client now also refetches the board list
 on `org:joined`. Fine at Phase 1 scale; revisit if a mass reconnect ever
 becomes a thundering herd.
 
-**A removed member keeps their socket in the room.** Removal deletes the
-membership, so RLS blocks them from reading anything over REST
-immediately — but their existing socket stays joined to `org:<uuid>` and
-keeps receiving broadcasts until it disconnects or switches org. Closing
-it needs a user-id → socket-id index so the server can evict them.
-Deferred, and the only reason it is acceptable now is that the window is
-short and removal is rare. Fix this before the client portal ships, where
-revoking an external party's access is the entire point.
+**~~A removed member keeps their socket in the room.~~ CLOSED (H4).**
+Every socket now joins a `user:<uuid>` index room at connection time —
+an index, never a broadcast target — so `evictUserFromOrg()` can find a
+specific person's sockets and force them out of `org:<uuid>` the moment
+their membership is deleted. Verified by `hardening.test.mjs` H4.1–H4.7:
+the removed socket goes silent across four subsequent writes while a
+control socket receives all of them, REST returns 404, and the evicted
+socket cannot re-join.
+
+One residue worth naming, because "H4 shipped" will otherwise read as
+"revocation is instant": the removed member still holds a valid access
+token for up to an hour (see the token cache above). RLS refuses them
+everything, since the membership row is gone — what remains is token
+*validity*, not authority.
+
+`fetchSockets()` over the user room is deliberately the cheap
+implementation. It assumes one Node process, which is the deployed shape
+today, and it is the single call that must change if that stops being
+true.
 
 **Broadcasts are at-most-once.** Socket.io does not replay missed
 events, and there are two windows where one is silently lost: the

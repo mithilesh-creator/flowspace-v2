@@ -1,5 +1,6 @@
 import { Fragment, useState } from 'react';
 
+import { cardAssigneeId, cardDueDate } from '../lib/board.js';
 import { memberLabel } from './CardEditor.jsx';
 
 /**
@@ -11,6 +12,12 @@ import { memberLabel } from './CardEditor.jsx';
  * handled by the column root. Without the `stopPropagation` on the card
  * handlers a hover over a card would also register as a hover over the
  * column and the drop index would snap to the end of the list.
+ *
+ * The keyboard path (H5) rides on the same elements rather than a parallel
+ * set of controls: the card's own open button is also its grab handle, and
+ * the column gets one next to its title because a heading cannot take
+ * focus. `grab` comes from the board; this component only reports keys
+ * upward and reflects the grabbed state visually.
  */
 export function BoardColumn({
   list,
@@ -19,7 +26,12 @@ export function BoardColumn({
   canDeleteList,
   drag,
   dropHint,
+  grab,
+  hintId,
   memberById,
+  membersStatus,
+  onCardKeyDown,
+  onListKeyDown,
   onDragStartCard,
   onDragStartList,
   onDragEnd,
@@ -39,6 +51,8 @@ export function BoardColumn({
   const draggingCard = drag?.kind === 'card';
   const cardHint =
     dropHint?.kind === 'card' && dropHint.listId === list.id ? dropHint.index : null;
+  const grabbedList = grab?.kind === 'list' && grab.listId === list.id;
+  const grabbedCardId = grab?.kind === 'card' ? grab.cardId : null;
 
   async function handleAdd(event) {
     event.preventDefault();
@@ -59,8 +73,11 @@ export function BoardColumn({
 
   return (
     <section
-      className={`column${drag?.listId === list.id && draggingList ? ' is-dragging' : ''}`}
+      className={`column${drag?.listId === list.id && draggingList ? ' is-dragging' : ''}${
+        grabbedList ? ' is-grabbed' : ''
+      }`}
       aria-label={list.title}
+      data-list-id={list.id}
       onDragOver={(event) => {
         if (!draggingList) return;
         event.preventDefault();
@@ -86,6 +103,20 @@ export function BoardColumn({
         }}
         onDragEnd={onDragEnd}
       >
+        {canWrite && (
+          <button
+            type="button"
+            className="ghost grab-handle"
+            data-kb-focus={`list:${list.id}`}
+            aria-label={`Reorder list ${list.title}`}
+            aria-describedby={hintId}
+            aria-pressed={grabbedList}
+            title="Drag, or press space to reorder with the keyboard"
+            onKeyDown={(event) => onListKeyDown(event, list)}
+          >
+            <span aria-hidden="true">⠿</span>
+          </button>
+        )}
         <h2 title={canWrite ? 'Drag to reorder' : undefined}>{list.title}</h2>
         <span className="count">{list.cards.length}</span>
         {canWrite && (
@@ -128,7 +159,10 @@ export function BoardColumn({
           <Fragment key={card.id}>
             {cardHint === cardIndex && <li className="drop-indicator" aria-hidden="true" />}
             <li
-              className={`kanban-card${drag?.cardId === card.id ? ' is-dragging' : ''}`}
+              className={`kanban-card${drag?.cardId === card.id ? ' is-dragging' : ''}${
+                grabbedCardId === card.id ? ' is-grabbed' : ''
+              }`}
+              data-card-id={card.id}
               draggable={canWrite}
               onDragStart={(event) => {
                 if (!canWrite) return;
@@ -147,30 +181,26 @@ export function BoardColumn({
                 onHoverCard(list.id, cardIndex + (after ? 1 : 0));
               }}
             >
+              {/* One control, two jobs: enter or click opens the editor,
+                  space picks the card up. Adding a second focusable
+                  handle would double the tab stops on every card. */}
               <button
                 type="button"
                 className="card-open"
+                data-kb-focus={`card:${card.id}`}
+                aria-describedby={canWrite ? hintId : undefined}
+                aria-pressed={canWrite ? grabbedCardId === card.id : undefined}
+                onKeyDown={(event) => onCardKeyDown(event, card, list.id)}
                 onClick={() => onOpenCard(card)}
                 disabled={!canWrite}
               >
                 <span className="card-title">{card.title}</span>
                 {card.description && <span className="card-desc">{card.description}</span>}
-                {(card.assignee_id || card.due_date) && (
-                  <span className="card-meta">
-                    {card.assignee_id && (
-                      <span className="role-chip">
-                        {memberById.has(card.assignee_id)
-                          ? memberLabel(memberById.get(card.assignee_id))
-                          : 'Assigned'}
-                      </span>
-                    )}
-                    {card.due_date && (
-                      <span className="muted small">
-                        due {new Date(card.due_date).toLocaleDateString()}
-                      </span>
-                    )}
-                  </span>
-                )}
+                <CardMeta
+                  card={card}
+                  memberById={memberById}
+                  membersLoaded={membersStatus === 'ready'}
+                />
               </button>
             </li>
           </Fragment>
@@ -201,5 +231,37 @@ export function BoardColumn({
         </form>
       )}
     </section>
+  );
+}
+
+/**
+ * Assignee chip and due date.
+ *
+ * Fields are read through the accessors in lib/board.js rather than off a
+ * literal shape — the card row is gaining `board_id` and will gain more.
+ *
+ * An assignee we cannot name is only called a *former* member once the
+ * member list has actually loaded. Before that the id is simply one we
+ * have not looked up yet, and saying "former member" would be a claim
+ * about the workspace we have no evidence for.
+ */
+function CardMeta({ card, memberById, membersLoaded }) {
+  const assigneeId = cardAssigneeId(card);
+  const due = cardDueDate(card);
+  if (!assigneeId && !due) return null;
+
+  const member = assigneeId ? memberById.get(assigneeId) : null;
+
+  return (
+    <span className="card-meta">
+      {assigneeId && (
+        <span className={`role-chip${membersLoaded && !member ? ' is-stale' : ''}`}>
+          {member ? memberLabel(member) : membersLoaded ? 'Former member' : 'Assigned'}
+        </span>
+      )}
+      {due && (
+        <span className="muted small">due {new Date(due).toLocaleDateString()}</span>
+      )}
+    </span>
   );
 }

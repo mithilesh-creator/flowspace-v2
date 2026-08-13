@@ -13,7 +13,8 @@
     "test:realtime": "node --env-file=.env tests/realtime-isolation.test.mjs",
     "test:invitations": "node --env-file=.env tests/invitations.test.mjs",
     "test:kanban": "node --env-file=.env tests/kanban-isolation.test.mjs",
-    "test": "npm run test:realtime && npm run test:invitations && npm run test:kanban"
+    "test:hardening": "node --env-file=.env tests/hardening.test.mjs",
+    "test": "npm run test:realtime && npm run test:invitations && npm run test:kanban && npm run test:hardening"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

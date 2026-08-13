@@ -24,8 +24,11 @@ const staff = requireOrgRole('owner', 'admin', 'member');
 const admins = requireOrgRole('owner', 'admin');
 
 export const LIST_COLUMNS = 'id, org_id, board_id, title, position, created_at, updated_at';
+// board_id joined this list in migration 0012. Cards used to reach their
+// board through their list; now they carry it, and the foreign key
+// (list_id, board_id, org_id) makes the two agree by construction.
 export const CARD_COLUMNS =
-  'id, org_id, list_id, title, description, position, assignee_id, due_date, created_at, updated_at';
+  'id, org_id, board_id, list_id, title, description, position, assignee_id, due_date, created_at, updated_at';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

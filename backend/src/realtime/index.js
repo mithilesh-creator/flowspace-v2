@@ -5,7 +5,7 @@ import { userClient } from '../lib/supabase.js';
 import { verifyAccessToken } from '../lib/verify-token.js';
 import { getOrgRole } from '../middleware/tenant.js';
 import { setIo } from './emitter.js';
-import { orgRoom } from './rooms.js';
+import { orgRoom, userRoom } from './rooms.js';
 
 /**
  * Every event documented in /docs/socket-events.md. Keep the two in sync
@@ -46,6 +46,13 @@ export function attachRealtime(httpServer) {
   });
 
   io.on('connection', (socket) => {
+    // The user index. Nothing is ever broadcast to this room — it is how
+    // the server finds a specific person's sockets when their membership
+    // is revoked and they have to be thrown out of an org room. Joined
+    // from the verified handshake identity, never from a client payload,
+    // and left automatically on disconnect.
+    socket.join(userRoom(socket.data.user.id));
+
     socket.emit('connection:ready', { userId: socket.data.user.id });
 
     // ----------------------------------------------------------------

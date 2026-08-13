@@ -109,9 +109,15 @@ on conflict (id) do nothing;
 --
 -- org_id is written explicitly on every row and must agree with the
 -- parent's. It is not belt-and-braces: the composite foreign keys
--- (board_id, org_id) and (list_id, org_id) mean a mismatch here is
--- rejected outright, so getting these wrong fails the seed loudly rather
--- than quietly planting a cross-tenant row.
+-- (board_id, org_id) and (list_id, board_id, org_id) mean a mismatch here
+-- is rejected outright, so getting these wrong fails the seed loudly
+-- rather than quietly planting a cross-tenant row.
+--
+-- Since 0012 cards also carry board_id, and it must agree with the board
+-- their list is on — same rule, one column wider, and just as loudly
+-- enforced. Since 0011 assignee_id must be a member of the card's own org,
+-- so every assignee below is someone the memberships block above put in
+-- that tenant.
 -- ---------------------------------------------------------------------
 
 insert into public.lists (id, org_id, board_id, title, position)
@@ -125,12 +131,12 @@ values
   ('bbbb1002-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'bbbb0001-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'Rolling out', 2)
 on conflict (id) do nothing;
 
-insert into public.cards (id, org_id, list_id, title, description, position, assignee_id, due_date)
+insert into public.cards (id, org_id, board_id, list_id, title, description, position, assignee_id, due_date)
 values
-  ('aaaa2001-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'aaaa1001-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Draft the Q3 brief',       'Scope, budget, and the two dates that actually matter.', 1, '11111111-1111-4111-8111-111111111111', now() + interval '5 days'),
-  ('aaaa2002-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'aaaa1001-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Chase supplier quotes',    null,                                                     2, null,                                   null),
-  ('aaaa2003-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'aaaa1002-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Rebuild onboarding flow',  'Blocked on the copy review.',                            1, '22222222-2222-4222-8222-222222222222', null),
-  ('bbbb2001-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'bbbb1001-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'Audit depot inventory',    null,                                                     1, '33333333-3333-4333-8333-333333333333', null)
+  ('aaaa2001-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'aaaa0001-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'aaaa1001-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Draft the Q3 brief',       'Scope, budget, and the two dates that actually matter.', 1, '11111111-1111-4111-8111-111111111111', now() + interval '5 days'),
+  ('aaaa2002-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'aaaa0001-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'aaaa1001-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Chase supplier quotes',    null,                                                     2, null,                                   null),
+  ('aaaa2003-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'aaaa0001-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'aaaa1002-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Rebuild onboarding flow',  'Blocked on the copy review.',                            1, '22222222-2222-4222-8222-222222222222', null),
+  ('bbbb2001-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'bbbb0001-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'bbbb1001-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'Audit depot inventory',    null,                                                     1, '33333333-3333-4333-8333-333333333333', null)
 on conflict (id) do nothing;
 
 -- ---------------------------------------------------------------------

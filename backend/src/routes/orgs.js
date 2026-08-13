@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { HttpError, asyncRoute, fromPostgrestError } from '../lib/errors.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireOrgMember } from '../middleware/tenant.js';
-import { emitToOrg } from '../realtime/emitter.js';
+import { emitToOrg, evictUserFromOrg } from '../realtime/emitter.js';
 
 export const orgsRouter = Router();
 
@@ -112,6 +112,13 @@ orgsRouter.get(
  * already expressed in the memberships DELETE policy, so this route does
  * not re-check the role — it lets the database decide and translates the
  * refusal. The last-owner trigger also applies, surfacing as 409.
+ *
+ * Removal has a realtime half that RLS cannot do for us. The DELETE stops
+ * them reading over REST immediately, but their open socket was already
+ * admitted to `org:<uuid>` and nothing re-checks a socket that is already
+ * in a room. So we throw it out — after the broadcast, not before, so the
+ * person being removed hears the `member:removed` naming them and can act
+ * on it. That is the last thing they receive from this tenant.
  */
 orgsRouter.delete(
   '/:orgId/members/:membershipId',
@@ -136,6 +143,13 @@ orgsRouter.delete(
     } catch {
       // Already committed; realtime is best-effort.
     }
+
+    // Awaited, so the response does not return before the eviction has
+    // actually happened — a client that sees 204 and immediately asserts
+    // the removed socket is silent should not be racing us.
+    // evictUserFromOrg swallows its own failures for the same reason the
+    // emit above is wrapped: the membership is gone either way.
+    await evictUserFromOrg(req.orgId, data.user_id);
 
     res.status(204).end();
   })

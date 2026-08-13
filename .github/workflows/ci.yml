@@ -1,0 +1,181 @@
+name: CI
+
+# H7. Two independent gates:
+#
+#   frontend — the production Vite build compiles.
+#   backend  — the 39 checks in backend/tests/*.mjs run against a real
+#              server and the DEV Supabase project.
+#
+# The backend suites are not unit tests. They boot the API on :4000, sign
+# in as the six seeded accounts from supabase/seed.sql, and write and
+# delete real rows. That means they need real credentials, and they need
+# the SEEDED project — see the guard in "Verify the CI secrets" below.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Supersede an in-flight run for the same branch when a new commit lands.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      # No VITE_* variables are supplied here, and that is deliberate.
+      #
+      # Vite inlines them at build time, so a bundle built in CI would
+      # carry whatever CI had — which is nothing. The app tolerates that
+      # at build time (frontend/src/lib/supabase.js only throws when the
+      # module is imported in a browser), so this step is a COMPILE CHECK
+      # and nothing more.
+      #
+      # The output is therefore NOT deployable and is deliberately not
+      # uploaded as an artifact. The real production bundle is built on a
+      # developer machine from frontend/.env.production — see
+      # docs/deployment.md.
+      - name: npm run build
+        run: npm run build
+
+  backend:
+    name: Backend suites (dev Supabase)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+
+    # Repo-wide serialisation, on purpose. Every backend suite shares one
+    # mutable resource — the seeded dev Supabase project — and they create
+    # and delete invitations, boards, lists and cards under fixed seed IDs.
+    # Two runs at once would interfere and produce failures that say
+    # nothing about the commit.
+    #
+    # Cost of this: if a run is executing and two more queue up, GitHub
+    # cancels the older pending one. A CANCELLED backend job means
+    # "superseded while waiting", not "broken".
+    concurrency:
+      group: backend-suites-dev-supabase
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # >=20.6 for `node --env-file`, which every test script uses.
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Verify the CI secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          missing=()
+          for name in SUPABASE_URL SUPABASE_ANON_KEY CORS_ORIGINS APP_URL; do
+            if [ -z "${!name}" ]; then missing+=("$name"); fi
+          done
+          if [ ${#missing[@]} -ne 0 ]; then
+            echo "::error::Missing repository secrets: ${missing[*]}."
+            echo "::error::CI cannot run the backend suites without them."
+            echo "::error::See the 'CI' section of docs/deployment.md for what each value is and where to get it."
+            exit 1
+          fi
+
+          # Hard stop if anyone ever points CI at production.
+          #
+          # These suites sign in as seeded accounts and write rows. Prod
+          # (ajkzoiqsvcibvcodkuzs) has zero rows and must keep them; dev
+          # (hjylkhswlwqiwvztynkw) is the seeded one. A wrong secret here
+          # would turn every CI run into an attempt to write to live data.
+          if printf '%s' "$SUPABASE_URL" | grep -q 'ajkzoiqsvcibvcodkuzs'; then
+            echo "::error::SUPABASE_URL points at the PRODUCTION Supabase project (ajkzoiqsvcibvcodkuzs)."
+            echo "::error::The backend suites write rows. They must only ever run against dev (hjylkhswlwqiwvztynkw)."
+            exit 1
+          fi
+          echo "secrets present; target project is not prod"
+
+      - name: npm ci
+        run: npm ci
+
+      # backend/.env is gitignored, so CI has to materialise one. It is
+      # not optional plumbing: every script in backend/package.json is
+      # `node --env-file=.env …`, so the suites cannot start without this
+      # file even though the values are already in the environment.
+      #
+      # NODE_ENV stays `test`: `production` activates the CORS_ORIGINS="*"
+      # boot guard in backend/src/config/env.js, which is a production
+      # concern and would only obscure failures here.
+      - name: Write backend/.env from the repository secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          umask 077
+          {
+            echo "PORT=4000"
+            echo "NODE_ENV=test"
+            echo "SUPABASE_URL=${SUPABASE_URL}"
+            echo "SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}"
+            echo "CORS_ORIGINS=${CORS_ORIGINS}"
+            echo "APP_URL=${APP_URL}"
+          } > .env
+          echo "wrote backend/.env with $(wc -l < .env) keys"
+
+      - name: Start the API on :4000 and wait for /health
+        run: |
+          npm start > "$RUNNER_TEMP/server.log" 2>&1 &
+          echo "SERVER_PID=$!" >> "$GITHUB_ENV"
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:4000/health > /dev/null 2>&1; then
+              echo "API healthy on :4000"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::API never became healthy on :4000 within 30s. Server log:"
+          cat "$RUNNER_TEMP/server.log" || true
+          exit 1
+
+      # realtime + invitations + kanban. Each suite calls
+      # process.exit(1) when any assertion fails and package.json chains
+      # them with &&, so one failed check fails the job.
+      - name: npm test
+        run: npm test
+
+      - name: Server log
+        if: always()
+        run: cat "$RUNNER_TEMP/server.log" || true
+
+      - name: Stop the API
+        if: always()
+        run: |
+          if [ -n "${SERVER_PID:-}" ]; then kill "$SERVER_PID" 2>/dev/null || true; fi

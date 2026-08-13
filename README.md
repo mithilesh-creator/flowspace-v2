@@ -9,10 +9,24 @@ Project guide and conventions: [CLAUDE.md](./CLAUDE.md).
 |---|---|
 | Frontend | [flowspace-v2.netlify.app](https://flowspace-v2.netlify.app) — **live** |
 | Backend | [backend-production-8d147.up.railway.app](https://backend-production-8d147.up.railway.app) — **live**, healthcheck passing |
-| Database | Supabase `flowspace-v2-prod` — all 10 migrations applied |
+| Database | Supabase `flowspace-v2-prod` — all migrations applied |
 | Repo | `mithilesh-creator/flowspace-v2` (private) |
 
-Verified against the deployed stack:
+**Phase 1 and Phase 2 are built, tested and deployed. A hardening pass
+(H1–H10) is in progress.** Full phase-by-phase status:
+[`docs/product-roadmap.md`](./docs/product-roadmap.md).
+
+## Status
+
+| Phase | State |
+|---|---|
+| 1 — Multi-tenant workspaces + Supabase Auth/RLS | Shipped |
+| 2 — Real-time Kanban (lists, cards, Socket.io sync) | Shipped; hardening H1–H10 **in progress** |
+| 3 — AI task automation | Not started — spec drafted, [`docs/phase-3-spec.md`](./docs/phase-3-spec.md) |
+| 4 — Client-facing portal mode | Not started |
+| 5 — Billing + onboarding + tenant admin | Not started |
+
+### Verified against the deployed stack
 
 - `/health` returns ok; `/api/orgs` without a token returns 401.
 - CORS echoes `https://flowspace-v2.netlify.app` and returns an empty
@@ -36,41 +50,45 @@ Production auth path, verified against `flowspace-v2-prod`:
   point at the Netlify origin. A wrong value there sends every
   confirmation link to the wrong host and no new user can finish.
 
-**What deployment does NOT prove.** The 39 automated checks cannot run
-against prod, because prod deliberately has no seed — and the suites are
-built on seeded fixtures across two tenants. They pass against
-`flowspace-v2-dev`. Prod has **zero rows in every table**, so sign-up,
-tenant isolation, invitations and realtime are unexercised there until a
-real account exists. The first real sign-up is the remaining test.
+### What deployment does NOT prove
 
-Frontend builds are uploaded pre-built from `frontend/`, using
-`frontend/.env.production` (gitignored). The site is not connected to the
-repo, so Netlify's own build-time variables are not consulted — worth
-knowing before wiring up git-push deploys.
-
-**Phase 1 status: feature-complete, verified locally, not yet deployed.**
-
-38 automated checks pass against a live hosted Supabase project (17
-database isolation, 12 invitation flow, 9 realtime isolation), and the
-production frontend build succeeds. Confirmed in the browser: sign-up,
-sign-in, workspace switching, live board updates across separate clients,
-read-only `client` access, and the full invitation path — a signed-out
-invitee clicking a link, signing in, and landing in the workspace with
-the role they were given.
-
-Deployment to Railway/Netlify is the one thing left.
-
-**Phase 2 status: in progress.** Kanban lists and cards, built in parallel
-by two engineers against the frozen spec in
-[`docs/phase-2-contract.md`](./docs/phase-2-contract.md). Not started on
-disk at the time of writing — no `0009`/`0010` migrations, no
-`backend/src/routes/lists.js` or `cards.js`, no board-detail route. No
-Phase 2 test coverage exists yet, so the 38 checks above cover Phase 1
-only. Acceptance criteria:
-[`docs/integration-checklist.md`](./docs/integration-checklist.md).
-
-Full phase-by-phase status:
+The 39 backend checks and the SQL isolation suite **cannot run against
+prod**, because prod deliberately has no seed and the suites are built on
+seeded two-tenant fixtures. They pass against `flowspace-v2-dev`. Prod has
+**zero rows in every table**, so sign-up, tenant isolation, invitations and
+realtime are unexercised there. **The first real sign-up is the remaining
+test** — and it should be performed deliberately, as a test, with the
+result recorded. See gap 6 in
 [`docs/product-roadmap.md`](./docs/product-roadmap.md).
+
+"Deployed" and "verified in production" are different claims. Only the
+first is true today.
+
+## Phase 2 hardening pass (H1–H10) — in progress
+
+Scope frozen in
+[`docs/phase-2-hardening-contract.md`](./docs/phase-2-hardening-contract.md);
+five agents are working against it in parallel. **None of it is finished**,
+and this list will be stale before the pass is — the contract is
+authoritative, not this table.
+
+| | Item | Owner |
+|---|---|---|
+| H1 | `assignee_id` could reference a profile outside the org | Backend |
+| H2 | Cards carry no `board_id`; same-tenant cross-board move has no DB backstop | Backend |
+| H3 | No `rebalance_card_positions` | Backend |
+| H4 | **A removed member's socket stays in the org room** | Backend |
+| H5 | Drag-and-drop is mouse-only | Frontend |
+| H6 | Assignee picker must offer only org members | Frontend |
+| H7 | No CI | DevOps |
+| H8 | Deploy pipeline documented honestly (Netlify not git-connected) | DevOps |
+| H9 | Tests for H1–H4, each failing before and passing after | QA |
+| H10 | Read-only production smoke test, `scripts/smoke-prod.mjs` | QA |
+
+H4 is the one that matters most: it has been an open gap since Phase 1, and
+it blocks the Phase 4 client portal, where revoking an outsider's access is
+the entire feature. Acceptance criteria for the whole pass:
+[`docs/integration-checklist.md`](./docs/integration-checklist.md) §8.
 
 ```
 frontend/   React + Vite
@@ -83,12 +101,18 @@ docs/       architecture, socket contract, roadmap, checklist, case studies
 
 | File | What it is |
 |---|---|
-| [`docs/architecture.md`](./docs/architecture.md) | How the tenant boundary works, and the known gaps |
-| [`docs/socket-events.md`](./docs/socket-events.md) | The Socket.io event contract |
-| [`docs/phase-2-contract.md`](./docs/phase-2-contract.md) | Phase 2 spec — frozen while it is being built |
+| [`docs/architecture.md`](./docs/architecture.md) | How the tenant boundary works, and the known gaps. **Still headed "Phase 1" — the most out-of-date doc here; queued behind the hardening pass** |
+| [`docs/socket-events.md`](./docs/socket-events.md) | The Socket.io event contract (Backend owns) |
+| [`docs/phase-2-contract.md`](./docs/phase-2-contract.md) | Phase 2 spec — frozen |
+| [`docs/phase-2-hardening-contract.md`](./docs/phase-2-hardening-contract.md) | The hardening pass — frozen, authoritative |
 | [`docs/product-roadmap.md`](./docs/product-roadmap.md) | Five phases, honest status, gap deadlines |
-| [`docs/integration-checklist.md`](./docs/integration-checklist.md) | The acceptance gate for Phase 2 |
-| [`docs/case-studies/`](./docs/case-studies/) | Catalogue-ready summaries (Phase 2 is a DRAFT) |
+| [`docs/integration-checklist.md`](./docs/integration-checklist.md) | Acceptance gate for Phase 2 (§1–§7) and the hardening pass (§8) |
+| [`docs/phase-3-spec.md`](./docs/phase-3-spec.md) | AI task automation — a draft to think against, nothing decided |
+| [`docs/case-studies/`](./docs/case-studies/) | Catalogue-ready summaries |
+
+`docs/deployment.md` is being written by DevOps under H8 and will be the
+authority on the deploy pipeline once it lands. Where it disagrees with the
+runbook at the bottom of this file, it wins.
 
 ---
 
@@ -98,20 +122,20 @@ Two hosted Supabase projects, both ap-south-1, both free tier:
 
 | | ref | contents |
 |---|---|---|
-| `flowspace-v2-dev` | `hjylkhswlwqiwvztynkw` | migrations 0001–0008 **+ seed** |
-| `flowspace-v2-prod` | `ajkzoiqsvcibvcodkuzs` | migrations 0001–0008, **no seed**, zero rows |
-
-Phase 2 adds migrations `0009`/`0010` (lists, cards). Apply them to dev
-first; prod gets them as part of the deployment step below.
+| `flowspace-v2-dev` | `hjylkhswlwqiwvztynkw` | all migrations **+ seed** |
+| `flowspace-v2-prod` | `ajkzoiqsvcibvcodkuzs` | all migrations, **no seed**, zero rows |
 
 > **Never point a deployment at the dev project.** Its seed creates six
 > accounts sharing the password `password123`, published in this repo.
+>
+> **Never seed prod.** Zero rows is a deliberate invariant, and H10's smoke
+> test is read-only for that reason.
 
-Prod was verified empty and locked down on creation: 5 tables with RLS
-enabled *and* forced, 17 policies, and `anon` execute revoked on all
-helpers. Still to do there by hand, in the Supabase dashboard: set
-**Site URL** to the Netlify origin and enable **leaked-password
-protection**.
+Prod was verified empty and locked down on creation: RLS enabled *and*
+forced on every tenant-scoped table, and `anon` execute revoked on all
+helpers. Two things there are still manual, in the Supabase dashboard, and
+have **no automated check**: set **Site URL** to the Netlify origin, and
+enable **leaked-password protection**. Confirm both.
 
 `backend/.env` and `frontend/.env` are already populated and are
 gitignored. To recreate them, copy the `.env.example` next to each and
@@ -135,7 +159,7 @@ Windows does not refresh PATH in already-running shells.
 
 ## Test accounts
 
-Password for all: `password123`
+Dev only. Password for all: `password123`
 
 | Email | Workspace | Role |
 |---|---|---|
@@ -146,109 +170,110 @@ Password for all: `password123`
 | `owner@acme.test` | Acme Logistics | owner |
 | `dual@contractor.test` | **both** | member |
 
+`dual@contractor.test` is the important one: everyone else can be refused
+at the middleware before RLS is consulted, but the contractor is a
+legitimate member of both tenants, so their requests actually reach the
+policies and the composite foreign keys.
+
 ---
 
 ## The isolation suites
 
-Per CLAUDE.md, nothing ships without passing both. They cover the two
-places the tenant boundary actually lives, and they are independent —
-the database one cannot see realtime, and vice versa.
+Per CLAUDE.md, nothing ships without passing both kinds. They cover the two
+places the tenant boundary actually lives, and they are independent — the
+database one cannot see realtime, and vice versa.
 
-### Database — 17 assertions across T01–T16
+**All of them run against `flowspace-v2-dev`.** They need the two-tenant
+seed. They cannot run against prod and must not be pointed at it.
 
-Cross-tenant reads and writes in both directions, board reassignment
-across tenants, admin privilege escalation, last-owner protection,
-profile visibility, orphan-org prevention, invitation email binding, and
-anon lockout.
+### Database — `supabase/tests/rls.test.sql`, T01–T24
+
+`T01`–`T16` cover Phase 1: cross-tenant reads and writes in both
+directions, board reassignment across tenants, admin privilege escalation,
+last-owner protection, profile visibility, orphan-org prevention,
+invitation email binding, and anon lockout.
+
+`T17`–`T24` cover Phase 2 lists and cards, including `T20` — a card cannot
+be dragged into another tenant's list — `T22` (deleting a list is an admin
+action, deleting a card is not) and `T23`/`T24` (`rebalance_list_positions`
+is SECURITY INVOKER and `anon` cannot reach it).
 
 ```bash
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/rls.test.sql
 ```
 
-Silence plus a final `NOTICE` means all passed. Any `FAIL [Tnn]` is a
-leak — fix before writing another line of feature code.
+Silence plus a final `NOTICE` means all passed. Any `FAIL [Tnn]` is a leak
+— fix before writing another line of feature code.
 
 Without `psql` installed, the same assertions can be run through the
 Supabase SQL editor or MCP connector by wrapping them in a harness
 function; see the file header.
 
-### Invitations — 12 checks
+### Backend — 39 checks across three Node suites
 
-The API layer in front of `accept_invitation()`: who may issue a token,
-who may redeem it, single use, revocation, and that listing invitations
-never returns `token_hash`.
+| Suite | Checks | Covers |
+|---|---|---|
+| `backend/tests/realtime-isolation.test.mjs` | 9 (`R1`–`R9`) | Three concurrent authenticated sockets across two tenants: unauthenticated sockets refused; members join their own room; **tenant B refused entry to tenant A's room when it asks by uuid**; a teammate receives the broadcast while the other tenant stays silent; no self-echo; cross-tenant REST reads 404; deletes broadcast |
+| `backend/tests/invitations.test.mjs` | 12 (`I1`–`I12`) | The API in front of `accept_invitation()`: who may issue a token, who may redeem it, single use, revocation, and that listing invitations never returns `token_hash` |
+| `backend/tests/kanban-isolation.test.mjs` | 18 (`K1`–`K16` + sub-checks) | Lists and cards. `K7`: a card cannot be moved into another tenant's list (400, `23503`, composite FK). `K8`: nor onto another board of the same tenant (404, route check) |
 
 ```bash
+cd backend && npm run test:realtime      # requires the backend running
 cd backend && npm run test:invitations
+cd backend && npm run test:kanban
+cd backend && npm test                   # all three
 ```
 
-### Realtime — 9 checks
-
-Three concurrent authenticated socket clients across two tenants.
-Requires the backend running.
-
-```bash
-cd backend && npm run test:realtime
-```
-
-Asserts: unauthenticated sockets are refused; members join their own
-room; **tenant B is refused entry to tenant A's room when it asks by
-uuid**; a teammate receives the broadcast while the other tenant stays
-silent through the write; the author does not get its own echo;
-cross-tenant REST reads 404; deletes broadcast.
-
-Both backend suites at once:
-
-```bash
-cd backend && npm test
-```
-
-Note `npm test` runs the realtime and invitation suites only — the
-database isolation suite is `psql`-driven and has no npm script. "npm test
-green" is not "the isolation suites pass"; run both.
-
-### Phase 2 extends both suites
-
-Lists and cards need their own assertions in `supabase/tests/rls.test.sql`
-and `backend/tests/realtime-isolation.test.mjs` — including that a card
-cannot be moved into another tenant's list, and that tenant B hears
-nothing while tenant A drags. The counts above will change when they land;
-update them here at the same time. See
-[`docs/integration-checklist.md`](./docs/integration-checklist.md).
+`npm test` runs the three Node suites only — **it does not run the SQL
+isolation suite**, which is `psql`-driven and has no npm script. "npm test
+green" is not "the isolation suites pass"; run both. H7 puts the Node
+suites in CI; the SQL suite stays manual, and CI will run against dev.
 
 ### After any DDL change
 
-Run the Supabase database linter. Migration 0008 exists because
+Run the Supabase database linter. Migration `0008` exists because
 `revoke execute … from public` does not revoke the direct grant Supabase
 issues to `anon`, which left eight SECURITY DEFINER functions reachable
 without a session. Nothing leaked — they all guard on `auth.uid()` — but
-the linter is what caught it, and it will catch the next one.
+the linter is what caught it, and it will catch the next one. Every new
+function needs an explicit `revoke execute … from anon`.
+
+### Hardening adds more
+
+H9 adds a test per fix for H1–H4, each of which must be **observed failing
+before the fix and passing after**. The most important is H4: proving a
+removed member's socket stops receiving broadcasts. The counts above will
+change when those land; update them here in the same change. Full list:
+[`docs/integration-checklist.md`](./docs/integration-checklist.md) §8.
 
 ---
 
 ## Deployment
 
-**Not done yet** — the last remaining item in Phase 1. Config is in place
-([`backend/railway.json`](./backend/railway.json),
-[`frontend/netlify.toml`](./frontend/netlify.toml)); what is missing is
-accounts and credentials.
+**Done.** Backend on Railway, frontend on Netlify, database on Supabase
+`flowspace-v2-prod`. The runbook below is what was done and what to repeat;
+DevOps owns `docs/deployment.md` under H8 and it supersedes this section
+once it exists — read it first, and treat anything here that contradicts it
+as stale rather than authoritative.
 
-Target: **backend → Railway, frontend → Netlify.** Nothing in the app
-favours Netlify over Vercel — it is a static Vite SPA calling an external
-API, with no SSR or edge functions — so this is an account-preference
-choice, not a technical one. Swapping to Vercel later means replacing
-`netlify.toml` with equivalent rewrite rules and nothing else.
+Config lives in [`backend/railway.json`](./backend/railway.json) and
+[`frontend/netlify.toml`](./frontend/netlify.toml).
 
-There is a deliberate ordering problem here: the backend needs the
-frontend's URL for CORS, and the frontend needs the backend's URL. Deploy
-the backend first with a placeholder, then come back and fix it.
+Nothing in the app favours Netlify over Vercel — it is a static Vite SPA
+calling an external API, with no SSR or edge functions — so this was an
+account-preference choice, not a technical one. Swapping to Vercel later
+means replacing `netlify.toml` with equivalent rewrite rules and nothing
+else.
+
+There is a deliberate ordering problem: the backend needs the frontend's
+URL for CORS, and the frontend needs the backend's URL. Deploy the backend
+first with a placeholder, then come back and fix it (step 4).
 
 ### 1. Production Supabase project
 
 A **new** project, not `flowspace-v2-dev`. Apply every migration in
-`supabase/migrations/` in order — `0001`–`0008` today, plus `0009`/`0010`
-once Phase 2 lands. Do **not** run `seed.sql` —
-those are six accounts sharing a published password.
+`supabase/migrations/` in order. Do **not** run `seed.sql` — those are six
+accounts sharing a published password.
 
 In Auth settings: set **Site URL** to the deployed frontend origin (email
 confirmation links use it), and turn on **leaked-password protection**,
@@ -257,7 +282,7 @@ which is off by default and flagged by the linter.
 ### 2. Backend → Railway
 
 Root directory `backend/`. `railway.json` supplies the start command and
-`/health` check.
+`/health` check. Railway auto-deploys from `main`, watching `backend/**`.
 
 | Variable | Value |
 |---|---|
@@ -267,46 +292,58 @@ Root directory `backend/`. `railway.json` supplies the start command and
 | `CORS_ORIGINS` | deployed frontend origin — **the server refuses to boot on `*`** |
 | `APP_URL` | deployed frontend origin |
 
-`APP_URL` is the one that is easy to miss. Invitation links are built
-from it and then **emailed to a human**, so if it is left unset it falls
-back to the first CORS origin — and every invitation you send points
-somewhere wrong. There is no way to fix a link already sent; the
-invitation has to be revoked and reissued.
+`APP_URL` is the one that is easy to miss. Invitation links are built from
+it and then **emailed to a human**, so if it is left unset it falls back to
+the first CORS origin — and every invitation you send points somewhere
+wrong. There is no way to fix a link already sent; the invitation has to be
+revoked and reissued.
 
-Leave `SUPABASE_SERVICE_ROLE_KEY` unset. Nothing in Phase 1 uses it, and
-an unset key cannot be misused.
+Leave `SUPABASE_SERVICE_ROLE_KEY` unset. Nothing uses it before Phase 5,
+and an unset key cannot be misused.
 
 ### 3. Frontend → Netlify
 
-Base directory `frontend/`. `netlify.toml` supplies the build, the
-publish directory, and the SPA redirect.
+Base directory `frontend/`. `netlify.toml` supplies the build, the publish
+directory, the SPA redirect and the security headers.
 
 That redirect is required, not boilerplate: `/accept-invite?token=…` is a
 client-side route with no file behind it, so without it a cold load of an
 invitation link 404s and every invite is broken. Netlify checks the
 filesystem before applying redirects, so it does not shadow `/assets/*`.
 
-Set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_API_URL`
-(the Railway URL). Note these are baked in **at build time** — changing
-one requires a redeploy, not just a restart.
+`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` and `VITE_API_URL` (the
+Railway URL) are baked in **at build time** — changing one requires a
+rebuild and redeploy, not a restart.
+
+> **The frontend is currently uploaded pre-built by hand** from
+> `frontend/`, using `frontend/.env.production` (gitignored). The site is
+> **not connected to the repo**, so Netlify's own build-time environment
+> variables are never consulted, and what is live is not derivable from
+> git. H8 documents this honestly and deliberately does **not** connect it
+> — that needs account access. Recorded as gap 12 in
+> [`docs/product-roadmap.md`](./docs/product-roadmap.md).
 
 ### 4. Close the loop
 
 Set the backend's `CORS_ORIGINS` and `APP_URL` to the real Netlify origin
 and redeploy the backend.
 
-### 5. Verify before calling Phase 1 done
+### 5. Verify
 
 ```bash
 cd backend && PORT=443 npm test
 ```
 
-> Unverified: both suites build their base URL as
+> **This does not work.** All three suites build their base URL as
 > `http://localhost:${PORT}`, so `PORT` alone will not point them at a
-> deployed host. Pointing them at Railway needs an env override the
-> suites do not currently read. Check this before relying on the command
-> above.
+> deployed host, and pointing them at Railway would need an env override
+> the suites do not read. It would also require seeding prod, which is
+> forbidden. Treat this block as a known dead end, kept here so nobody
+> rediscovers it.
 
-Point the suites at the deployed URLs, then repeat by hand: sign up, two
-tenants, an invitation redeemed by a signed-out invitee, and a live board
-update between two clients.
+What can actually be checked against prod is the read-only set at the top
+of this file, which H10 automates as `scripts/smoke-prod.mjs`. Beyond that,
+the outstanding verification is the first real sign-up, by hand: sign up,
+confirm the email arrives and its link resolves to the Netlify origin,
+create a workspace, invite a second address, redeem it, and open a board in
+two browsers. Record the result.

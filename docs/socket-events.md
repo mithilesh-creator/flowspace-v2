@@ -84,14 +84,47 @@ never roll back a join that already succeeded. The new member is not yet
 in the room when it fires — it exists to update the people list for those
 already there.
 
-`member:removed` has a known limitation: the removed user's own socket is
-still in the org room and will keep receiving that tenant's broadcasts
-until they disconnect or switch orgs. RLS already stops them reading
-anything over REST, so this leaks only events emitted in the window
-between removal and disconnect — but it is a real gap. The fix is for
-the server to force that socket out of the room on removal, which needs
-a socket-id-by-user index. Deliberately deferred; see
-docs/architecture.md.
+`member:removed` also **evicts**. See below.
+
+### Removal closes the socket's access, not just the database's
+
+`DELETE /api/orgs/:orgId/members/:membershipId` stops the removed user
+reading anything over REST the instant it commits, because RLS does not
+consult a cache. Their socket used to be a different story: it had
+already been admitted to `org:<uuid>`, nothing re-checks a socket that is
+already in a room, and so it kept receiving that tenant's broadcasts
+until the tab was closed.
+
+It is now forced out, in this order:
+
+1. `member:removed` is broadcast to the room — **including** the socket
+   about to be evicted, so the removed user learns why rather than
+   watching a board silently stop updating. The payload names them
+   (`userId`), which is how a client tells "someone was removed" from
+   "I was removed".
+2. Every socket belonging to that user leaves `org:<uuid>`.
+3. The route answers `204`. The eviction is awaited, so a `204` means it
+   has already happened.
+
+They cannot simply rejoin: `org:join` re-checks membership against the
+database, and there is no longer a row.
+
+**The user index room.** Every socket joins `user:<uuid>` at connection,
+derived from the verified handshake identity and never from a client
+payload. Nothing is ever broadcast to it — it exists purely so the server
+can find one person's sockets across their open tabs. Socket.io's own
+room bookkeeping is the index; a hand-rolled `Map` would have to be kept
+correct across every disconnect and reconnect, and the failure mode of
+getting that wrong is an evicted user who stays subscribed.
+
+**Scope.** Eviction uses `fetchSockets()` on a single Node process, which
+is the deployed shape today. On more than one instance a user's sockets
+could live on another process and this would need the Redis adapter —
+that call is the one place that would change. A user in two tenants
+(`dual@contractor.test`) leaves only the room they were removed from.
+There is a sub-millisecond window between step 1 and step 2 in which
+another concurrent broadcast could still reach them; the gap that
+mattered was measured in minutes.
 
 Every tenant-scoped payload carries `orgId`. Clients should still check it
 before applying the event: during an org switch, an in-flight event from
@@ -103,6 +136,12 @@ The room is the tenant, not the board. Everyone in `org:<uuid>` receives
 every card move in the tenant, including moves on boards they are not
 looking at. `boardId` is what lets a client drop those in one comparison
 instead of searching its state for a list id it has never seen.
+
+Since migration 0012 the `card` object carries a `board_id` of its own as
+well, and it always agrees with the envelope's `boardId` — the foreign key
+`(list_id, board_id, org_id)` makes disagreement unrepresentable. Filter
+on the envelope; the column is there because the database needs it, not
+because clients do.
 
 Widening the room to `org:<uuid>:board:<uuid>` would be the other answer,
 and it is the wrong one for now: a socket would have to re-join on every
