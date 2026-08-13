@@ -282,7 +282,26 @@ which is off by default and flagged by the linter.
 ### 2. Backend → Railway
 
 Root directory `backend/`. `railway.json` supplies the start command and
-`/health` check. Railway auto-deploys from `main`, watching `backend/**`.
+`/health` check.
+
+> **Auto-deploy is currently DISABLED on the service.** A push to `main`
+> builds nothing — verified: commit `3731804` sat unbuilt until a
+> deployment was triggered by hand. The GitHub webhook itself works; the
+> service-level toggle is off. Until it is enabled, **every backend
+> release needs a manual trigger**, and the frontend needs one always
+> (see below).
+>
+> This is not merely inconvenient. It breaks the assumption behind
+> ordering a schema change and a code change: if you migrate first
+> expecting the push to ship the matching code, the database moves ahead
+> and the running code stays behind.
+
+**Migrations and deploys must be ordered deliberately.** Adding a
+`NOT NULL` column (0012) means old code, which does not populate it,
+starts failing inserts the moment the migration lands. Prod had zero rows
+so nothing broke, but on a live system the safe pattern is
+expand/contract: add the column nullable, deploy code that writes it,
+*then* enforce `NOT NULL` — never migrate and deploy as one step.
 
 | Variable | Value |
 |---|---|
