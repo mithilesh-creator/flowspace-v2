@@ -12,7 +12,18 @@ Multi-tenant SaaS project management with real-time Kanban.
 |---|---|
 | Frontend | [flowspace-v2.netlify.app](https://flowspace-v2.netlify.app) — **live** |
 | Backend | [backend-production-8d147.up.railway.app](https://backend-production-8d147.up.railway.app) — **live**, healthcheck passing |
-| Database | Supabase `flowspace-v2-prod` — all migrations applied |
+| Database | Supabase `flowspace-v2-prod` — all migrations applied, **3 real users in 3 workspaces** |
+
+**Production is verified, not just deployed.** Three people have signed
+up, confirmed by email and created workspaces, and invitations work in
+production — one workspace has an owner plus a member, another an owner
+plus a `client`. Tenant isolation has been checked against those real
+accounts: **6/6**, run as the actual users, every block rolled back, row
+counts unchanged. Details in
+[`docs/HANDOFF.md`](./docs/HANDOFF.md).
+
+Still unexercised by real users: boards, lists, cards and realtime —
+prod has 0 boards. Those are covered by the dev suites only.
 | Repo | [`mithilesh-creator/flowspace-v2`](https://github.com/mithilesh-creator/flowspace-v2) (public) |
 
 **Phase 1 and Phase 2 are built, tested and deployed, and the Phase 2

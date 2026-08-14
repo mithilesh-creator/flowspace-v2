@@ -72,16 +72,47 @@ read-only for this reason.
 
 | # | Item | Who can do it |
 |---|---|---|
-| 1 | **First real sign-up on prod** — the last unverified thing in Phase 1/2 | Human. Requires creating an account |
-| 2 | **Enable Railway auto-deploy**, then verify with a real push | Human, dashboard |
-| 3 | **Create CI secrets** — `SUPABASE_URL`, `SUPABASE_ANON_KEY` (dev values) | Human. CI has never run |
-| 4 | **Prod Site URL** → the Netlify origin. Sign-up needs email confirmation, and the link is built from it | Human, Supabase dashboard |
-| 5 | **Leaked-password protection** on prod — confirmed disabled | Human, Supabase dashboard |
+| 1 | ~~First real sign-up on prod~~ **DONE** — see below | — |
+| 2 | ~~Prod Site URL~~ **DONE** — proven by three confirmed sign-ups | — |
+| 3 | **Enable Railway auto-deploy.** Confirmed still disabled. Cannot be done through the Railway MCP agent: it executes reads and deploys but silently refuses the write, across ~6 attempts. Dashboard → backend → Settings → Deploys | Human, dashboard only |
+| 4 | **Create CI secrets** — `SUPABASE_URL`, `SUPABASE_ANON_KEY` (dev values) | Human. CI has never run |
+| 5 | **Leaked-password protection** on prod — confirmed disabled by the linter | Human, Supabase dashboard |
 | 6 | Extend `supabase/tests/rls.test.sql` for H1–H3 | Next session |
 | 7 | Cards have no `unique (list_id, position)`; lists do. Undecided, and it matters for bulk AI inserts | Next session |
 | 8 | `docs/architecture.md` is still titled "Phase 1" | Trivial |
 
-Items 1–5 are all human-only. Nothing in Phase 3 is blocked by them.
+Items 3–5 are human-only. Nothing in Phase 3 is blocked by them.
+
+## Production is verified, not just deployed
+
+This was Phase 1's outstanding asterisk and it is now closed.
+
+Prod has **3 real users** (all email-confirmed, so Site URL is correct),
+**3 workspaces**, **5 memberships** — and the roles prove invitations work
+end to end in production: one workspace has an owner plus a member,
+another an owner plus a `client`.
+
+That real data made an isolation check possible against production for
+the first time. Run as those actual accounts, every block rolled back,
+**6/6 passed**:
+
+| | |
+|---|---|
+| P-T1 | An owner sees only their own workspace, not the other two live ones |
+| P-T2 | Cannot read another tenant's member roster |
+| P-T3 | Board insert into another live tenant refused (42501) |
+| P-T4 | No cross-tenant user directory — sees only their own profile |
+| P-T5 | The genuinely dual-workspace user sees exactly their two |
+| P-T6 | `anon` reads nothing from production |
+
+Row counts were unchanged afterwards. Note prod has **0 boards**: nobody
+has created one yet, so lists, cards and realtime remain unexercised by
+real users even though they are covered by the dev suites.
+
+The zero-rows invariant that `scripts/smoke-prod.mjs` was built around no
+longer holds — prod has real data now. The smoke test is still read-only
+and must stay that way, but for a stronger reason than before: those rows
+belong to real people.
 
 ## Known residuals
 
