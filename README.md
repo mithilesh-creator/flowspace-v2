@@ -3,7 +3,10 @@
 [![Netlify Status](https://api.netlify.com/api/v1/badges/f84dac52-1e23-4dd1-ab5c-5b7a5747688b/deploy-status)](https://app.netlify.com/projects/flowspace-v2/deploys)
 
 Multi-tenant SaaS project management with real-time Kanban.
-Project guide and conventions: [CLAUDE.md](./CLAUDE.md).
+
+**New here, or picking this up in a fresh session? Start with
+[`docs/HANDOFF.md`](./docs/HANDOFF.md).** Project guide and conventions:
+[CLAUDE.md](./CLAUDE.md).
 
 | | |
 |---|---|

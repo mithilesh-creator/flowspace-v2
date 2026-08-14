@@ -3,7 +3,7 @@ name: CI
 # H7. Two independent gates:
 #
 #   frontend — the production Vite build compiles.
-#   backend  — the 59 checks in backend/tests/*.mjs run against a real
+#   backend  — the 64 checks in backend/tests/*.mjs run against a real
 #              server and the DEV Supabase project.
 #
 # The backend suites are not unit tests. They boot the API on :4000, sign
@@ -198,10 +198,10 @@ jobs:
           cat "$RUNNER_TEMP/server.log" || true
           exit 1
 
-      # realtime (R1–R9) + invitations (I1–I12) + kanban (K1–K16) +
-      # hardening (H1–H4 checks) = 59. Each suite calls process.exit(1)
-      # when any assertion fails and package.json chains them with &&, so
-      # one failed check fails the job.
+      # realtime (9) + invitations (12) + kanban (18) + hardening (25,
+      # H1–H5) = 64. Each suite calls process.exit(1) when any assertion
+      # fails and package.json chains them with &&, so one failed check
+      # fails the job.
       - name: npm test
         run: npm test
 
