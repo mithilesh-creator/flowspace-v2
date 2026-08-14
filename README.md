@@ -10,10 +10,13 @@ Project guide and conventions: [CLAUDE.md](./CLAUDE.md).
 | Frontend | [flowspace-v2.netlify.app](https://flowspace-v2.netlify.app) — **live** |
 | Backend | [backend-production-8d147.up.railway.app](https://backend-production-8d147.up.railway.app) — **live**, healthcheck passing |
 | Database | Supabase `flowspace-v2-prod` — all migrations applied |
-| Repo | `mithilesh-creator/flowspace-v2` (private) |
+| Repo | [`mithilesh-creator/flowspace-v2`](https://github.com/mithilesh-creator/flowspace-v2) (public) |
 
-**Phase 1 and Phase 2 are built, tested and deployed. A hardening pass
-(H1–H10) is in progress.** Full phase-by-phase status:
+**Phase 1 and Phase 2 are built, tested and deployed, and the Phase 2
+hardening pass is complete on the product side: H1–H6 shipped.** What is
+left of the pass is CI (H7, written but never run), the deploy
+documentation (H8, in progress) and the prod smoke test (H10, not written).
+Full phase-by-phase status:
 [`docs/product-roadmap.md`](./docs/product-roadmap.md).
 
 ## Status
@@ -21,7 +24,7 @@ Project guide and conventions: [CLAUDE.md](./CLAUDE.md).
 | Phase | State |
 |---|---|
 | 1 — Multi-tenant workspaces + Supabase Auth/RLS | Shipped |
-| 2 — Real-time Kanban (lists, cards, Socket.io sync) | Shipped; hardening H1–H10 **in progress** |
+| 2 — Real-time Kanban (lists, cards, Socket.io sync) | Shipped and hardened — H1–H6 done; H7/H8/H10 outstanding |
 | 3 — AI task automation | Not started — spec drafted, [`docs/phase-3-spec.md`](./docs/phase-3-spec.md) |
 | 4 — Client-facing portal mode | Not started |
 | 5 — Billing + onboarding + tenant admin | Not started |
@@ -52,7 +55,7 @@ Production auth path, verified against `flowspace-v2-prod`:
 
 ### What deployment does NOT prove
 
-The 39 backend checks and the SQL isolation suite **cannot run against
+The 59 backend checks and the SQL isolation suite **cannot run against
 prod**, because prod deliberately has no seed and the suites are built on
 seeded two-tenant fixtures. They pass against `flowspace-v2-dev`. Prod has
 **zero rows in every table**, so sign-up, tenant isolation, invitations and
@@ -64,30 +67,39 @@ result recorded. See gap 6 in
 "Deployed" and "verified in production" are different claims. Only the
 first is true today.
 
-## Phase 2 hardening pass (H1–H10) — in progress
+## Phase 2 hardening pass (H1–H10)
 
 Scope frozen in
-[`docs/phase-2-hardening-contract.md`](./docs/phase-2-hardening-contract.md);
-five agents are working against it in parallel. **None of it is finished**,
-and this list will be stale before the pass is — the contract is
-authoritative, not this table.
+[`docs/phase-2-hardening-contract.md`](./docs/phase-2-hardening-contract.md).
+**H1–H6 are complete, tested and deployed.** Migrations `0011`–`0013` are
+applied to dev and prod, both at `0013`; the backend is live at commit
+`3731804` and the frontend has been redeployed with H5 and H6.
 
-| | Item | Owner |
-|---|---|---|
-| H1 | `assignee_id` could reference a profile outside the org | Backend |
-| H2 | Cards carry no `board_id`; same-tenant cross-board move has no DB backstop | Backend |
-| H3 | No `rebalance_card_positions` | Backend |
-| H4 | **A removed member's socket stays in the org room** | Backend |
-| H5 | Drag-and-drop is mouse-only | Frontend |
-| H6 | Assignee picker must offer only org members | Frontend |
-| H7 | No CI | DevOps |
-| H8 | Deploy pipeline documented honestly (Netlify not git-connected) | DevOps |
-| H9 | Tests for H1–H4, each failing before and passing after | QA |
-| H10 | Read-only production smoke test, `scripts/smoke-prod.mjs` | QA |
+| | Item | Owner | State |
+|---|---|---|---|
+| H1 | Assignee must be a member of the card's org | Backend | **Done** — `0011`, composite FK to `memberships` |
+| H2 | Cards carry `board_id`; FK widened to `(list_id, board_id, org_id)` | Backend | **Done** — `0012` |
+| H3 | `rebalance_card_positions`, SECURITY INVOKER, anon revoked | Backend | **Done** — `0013` |
+| H4 | **A removed member's socket is evicted from the org room** | Backend | **Done** — `user:<uuid>` index room |
+| H5 | Keyboard-accessible reordering | Frontend | **Done** — Space grabs, arrows move, Space/Enter drops, Escape cancels |
+| H6 | Assignee picker offers only org members | Frontend | **Done** — a departed assignee is labelled, not dropped |
+| H7 | CI | DevOps | **Written, never run** — needs repository secrets, which needs a human |
+| H8 | Deploy pipeline documented honestly | DevOps | **In progress** — `docs/deployment.md` |
+| H9 | Tests for H1–H4 | QA | **Done at the API level** — `hardening.test.mjs`, 20 checks. The SQL suite was **not** extended |
+| H10 | Read-only production smoke test | QA | **Not written** |
 
-H4 is the one that matters most: it has been an open gap since Phase 1, and
-it blocks the Phase 4 client portal, where revoking an outsider's access is
-the entire feature. Acceptance criteria for the whole pass:
+H4 was the one that mattered most: an open gap since Phase 1, and the
+blocker on the Phase 4 client portal, where revoking an outsider's access
+is the entire feature. It is closed — a removed member's socket is forced
+out of the org room the moment their membership is deleted, proven by
+`H4.1`–`H4.7`. **The residual is narrower and still real:** that person
+keeps a valid access token for up to an hour. RLS refuses them everything,
+because the membership row is gone, so what remains is token *validity*,
+not authority. Recorded as gap 3 in
+[`docs/product-roadmap.md`](./docs/product-roadmap.md).
+
+All of the above is green **on dev**. Acceptance criteria and the
+box-by-box evidence:
 [`docs/integration-checklist.md`](./docs/integration-checklist.md) §8.
 
 ```
@@ -101,7 +113,7 @@ docs/       architecture, socket contract, roadmap, checklist, case studies
 
 | File | What it is |
 |---|---|
-| [`docs/architecture.md`](./docs/architecture.md) | How the tenant boundary works, and the known gaps. **Still headed "Phase 1" — the most out-of-date doc here; queued behind the hardening pass** |
+| [`docs/architecture.md`](./docs/architecture.md) | How the tenant boundary works, and the known gaps. Updated after the hardening pass: composite keys named as the strongest boundary, 59 checks, gap 1 marked CLOSED. Its heading still says "Phase 1" |
 | [`docs/socket-events.md`](./docs/socket-events.md) | The Socket.io event contract (Backend owns) |
 | [`docs/phase-2-contract.md`](./docs/phase-2-contract.md) | Phase 2 spec — frozen |
 | [`docs/phase-2-hardening-contract.md`](./docs/phase-2-hardening-contract.md) | The hardening pass — frozen, authoritative |
@@ -134,8 +146,15 @@ Two hosted Supabase projects, both ap-south-1, both free tier:
 Prod was verified empty and locked down on creation: RLS enabled *and*
 forced on every tenant-scoped table, and `anon` execute revoked on all
 helpers. Two things there are still manual, in the Supabase dashboard, and
-have **no automated check**: set **Site URL** to the Netlify origin, and
-enable **leaked-password protection**. Confirm both.
+have **no automated check** — no suite in this repo can reach either:
+
+- **Site URL** must point at the Netlify origin. **Unconfirmed.** If it is
+  wrong, every email confirmation link goes to the wrong host and no new
+  user can finish signing up — which is the highest-risk unverified setting
+  in the system, because the first real sign-up is the outstanding test.
+- **Leaked-password protection** must be enabled. **It is currently
+  DISABLED**, confirmed by the Supabase linter. A known-bad state, not an
+  unknown one, and a single dashboard toggle away from fixed.
 
 `backend/.env` and `frontend/.env` are already populated and are
 gitignored. To recreate them, copy the `.env.example` next to each and
@@ -209,24 +228,32 @@ Without `psql` installed, the same assertions can be run through the
 Supabase SQL editor or MCP connector by wrapping them in a harness
 function; see the file header.
 
-### Backend — 39 checks across three Node suites
+**Still `T01`–`T24`.** The suite was **not** extended for H1, H2 or H3,
+though the hardening contract asked for that. Those three are covered at
+the API and PostgREST level by `hardening.test.mjs` instead — close, but
+not the same layer. Recorded rather than quietly dropped; see
+[`docs/integration-checklist.md`](./docs/integration-checklist.md) §8.9.
+
+### Backend — 59 checks across four Node suites
 
 | Suite | Checks | Covers |
 |---|---|---|
 | `backend/tests/realtime-isolation.test.mjs` | 9 (`R1`–`R9`) | Three concurrent authenticated sockets across two tenants: unauthenticated sockets refused; members join their own room; **tenant B refused entry to tenant A's room when it asks by uuid**; a teammate receives the broadcast while the other tenant stays silent; no self-echo; cross-tenant REST reads 404; deletes broadcast |
 | `backend/tests/invitations.test.mjs` | 12 (`I1`–`I12`) | The API in front of `accept_invitation()`: who may issue a token, who may redeem it, single use, revocation, and that listing invitations never returns `token_hash` |
 | `backend/tests/kanban-isolation.test.mjs` | 18 (`K1`–`K16` + sub-checks) | Lists and cards. `K7`: a card cannot be moved into another tenant's list (400, `23503`, composite FK). `K8`: nor onto another board of the same tenant (404, route check) |
+| `backend/tests/hardening.test.mjs` | 20 (`H1.x`–`H4.x`) | The hardening pass. `H1.2`/`H1.3`: a card cannot be assigned outside its org, through the API **or** straight at PostgREST. `H2.2`: the same-tenant wrong-board move is refused by the database, not just the route. `H3.3`/`H3.4`: rebalance is SECURITY INVOKER and unreachable by `anon`. `H4.5`: **a removed member's socket receives nothing**, with `H4.2`/`H4.4` as before-and-control so the silence cannot be passing for the wrong reason |
 
 ```bash
 cd backend && npm run test:realtime      # requires the backend running
 cd backend && npm run test:invitations
 cd backend && npm run test:kanban
-cd backend && npm test                   # all three
+cd backend && npm run test:hardening
+cd backend && npm test                   # all four
 ```
 
-`npm test` runs the three Node suites only — **it does not run the SQL
+`npm test` runs the four Node suites only — **it does not run the SQL
 isolation suite**, which is `psql`-driven and has no npm script. "npm test
-green" is not "the isolation suites pass"; run both. H7 puts the Node
+green" is not "the isolation suites pass"; run both. H7 would put the Node
 suites in CI; the SQL suite stays manual, and CI will run against dev.
 
 ### After any DDL change
@@ -238,13 +265,27 @@ without a session. Nothing leaked — they all guard on `auth.uid()` — but
 the linter is what caught it, and it will catch the next one. Every new
 function needs an explicit `revoke execute … from anon`.
 
-### Hardening adds more
+## Two lessons worth keeping
 
-H9 adds a test per fix for H1–H4, each of which must be **observed failing
-before the fix and passing after**. The most important is H4: proving a
-removed member's socket stops receiving broadcasts. The counts above will
-change when those land; update them here in the same change. Full list:
-[`docs/integration-checklist.md`](./docs/integration-checklist.md) §8.
+Both cost real time during the hardening pass. They are here rather than in
+a commit message because the next person will hit them the same way.
+
+**A green production build is not evidence that a page renders.**
+`CardEditor` called an undefined `memberOptionLabel`. `npm run build`
+passed — a `ReferenceError` is a runtime fault, and a bundler has no reason
+to object to a name it cannot resolve at build time. Opening any card
+blanked the entire application. Nothing but clicking it in a browser found
+it. Treat "the build is green" as "it compiles", never as "it works", and
+open the thing you changed.
+
+**Migrating ahead of a deploy is dangerous when the migration adds a
+`NOT NULL` column.** `0012` did exactly that. Old code, which does not
+populate the column, starts failing inserts the moment the migration lands
+— and with auto-deploy disabled, a push does not ship the matching code, so
+the window is however long it takes someone to trigger a release by hand.
+Prod had zero rows, so nothing broke. The rule is expand/contract: add the
+column nullable, deploy the code that writes it, *then* enforce
+`NOT NULL`. Never migrate and deploy as one step.
 
 ---
 

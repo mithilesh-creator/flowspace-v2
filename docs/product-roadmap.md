@@ -5,10 +5,18 @@ of **13 August 2026**, not what is planned. Where something is unverified,
 it says so.
 
 **Read the qualifier on every "verified" below.** Phases 1 and 2 are built,
-tested and deployed, but the automated suites run against the **dev**
-database. Production has zero rows by design, so the isolation properties
-those suites prove are proven on dev and unexercised on prod. That
-distinction is the single most important thing on this page.
+tested and deployed, and the Phase 2 hardening pass has closed H1–H6 — but
+the automated suites run against the **dev** database. Production has zero
+rows by design, so the isolation properties those suites prove are proven
+on dev and unexercised on prod. That distinction is the single most
+important thing on this page, and closing H1–H6 does not change it.
+
+**The Phase 4 blocker is closed.** Gap 1 — a removed member's socket
+staying in the org room — was the item that had to be fixed before the
+client portal. H4 closed it. The residual is narrower and still real: that
+member's access token stays valid for up to an hour, though RLS refuses
+them everything. What remains is token *validity*, not authority. That is
+gap 3, and it is still open.
 
 ---
 
@@ -17,7 +25,7 @@ distinction is the single most important thing on this page.
 | # | Phase | Status |
 |---|---|---|
 | 1 | Multi-tenant workspaces + Supabase Auth/RLS | **Shipped** — built, suites green on dev, deployed |
-| 2 | Real-time Kanban (lists, cards, Socket.io sync) | **Shipped** — built, suites green on dev, deployed. Hardening pass H1–H10 **in progress** |
+| 2 | Real-time Kanban (lists, cards, Socket.io sync) | **Shipped and hardened** — H1–H6 complete, tested and deployed. H7 (CI) written but never run; H8 (deploy docs) being written; H10 (prod smoke test) not written |
 | 3 | AI task automation | Not started. Spec drafted: `docs/phase-3-spec.md` |
 | 4 | Client-facing portal mode | Not started |
 | 5 | Billing (Stripe) + onboarding + tenant admin panel | Not started |
@@ -60,29 +68,41 @@ narrower and still-open question, recorded as gap 6.
 
 ## Phase 2 — Real-time Kanban
 
-**Shipped, with a hardening pass in flight.**
+**Shipped and hardened.**
 
 **Built:** migrations `0009` (lists, cards, composite foreign keys, RLS,
 `rebalance_list_positions`) and `0010` (list deletion narrowed to
-`owner|admin`). Nine REST endpoints under
-`/api/orgs/:orgId/boards/:boardId`. Eight socket events (`list:*`,
-`card:*`), documented in `docs/socket-events.md`. Board-detail UI with
-drag-and-drop and optimistic updates, resyncing the whole board on
-`org:joined` and on reconnect.
+`owner|admin`), then `0011`–`0013` for the hardening pass. Nine REST
+endpoints under `/api/orgs/:orgId/boards/:boardId`. Eight socket events
+(`list:*`, `card:*`), documented in `docs/socket-events.md`. Board-detail
+UI with pointer **and keyboard** drag-and-drop, optimistic updates,
+resyncing the whole board on `org:joined` and on reconnect.
 
-**Verified on dev:** 39 backend checks — 9 realtime
+**Verified on dev:** 59 backend checks — 9 realtime
 (`realtime-isolation.test.mjs`), 12 invitation
-(`invitations.test.mjs`), 18 Kanban (`kanban-isolation.test.mjs`) — plus
-the SQL isolation suite, now `T01`–`T24`. All green against
-`flowspace-v2-dev`. The two assertions worth naming:
+(`invitations.test.mjs`), 18 Kanban (`kanban-isolation.test.mjs`), 20
+hardening (`hardening.test.mjs`, `H1.x`–`H4.x`) — plus the SQL isolation
+suite, `T01`–`T24`. All green against `flowspace-v2-dev`, run by
+`cd backend && npm test` (the four Node suites; the SQL suite is separate
+and `psql`-driven). The assertions worth naming:
 
 - `K7` / `T20` — a card cannot be dragged into another tenant's list.
   Refused by the composite foreign key (`23503` → 400), not by a policy.
 - `K8` — a card cannot be dragged onto another board of the **same**
-  tenant. At the time that test was written the route's own check was the
-  only thing enforcing it; migration `0012` (H2) makes it structural.
+  tenant. When that test was written the route's own check was the only
+  thing enforcing it; migration `0012` (H2) makes it structural, and the
+  route check stays, so the observable status is still 404.
+- `H4.1`–`H4.7` — a removed member's socket goes silent across four
+  subsequent writes while a control socket receives all of them, REST
+  returns 404, and the evicted socket cannot re-join.
 
 **Not verified on prod:** none of the above. See below.
+
+**Note on the SQL suite.** It is still `T01`–`T24`; it was **not**
+extended for H1–H3, though the hardening contract's §8.1/8.2/8.3 asked for
+that. Those three are covered at the API level by `hardening.test.mjs`
+instead. Recorded here rather than quietly dropped — see
+`docs/integration-checklist.md` §8.
 
 ### One deliberate scope change, already made
 
@@ -94,25 +114,28 @@ deleting the board that contains it already needs an admin. Cards stay
 contract deviation, not a drift** — noted here so it is not rediscovered as
 a bug.
 
-### Phase 2 hardening pass (H1–H10) — in progress
+### Phase 2 hardening pass (H1–H10) — H1–H6 done
 
-Scope is frozen in `docs/phase-2-hardening-contract.md`. Five agents are
-working against it in parallel as this is written. **None of it is done.**
-Status below is what was on disk when this page was last edited and will be
-stale quickly — the contract, not this table, is authoritative.
+Scope is frozen in `docs/phase-2-hardening-contract.md`. **H1–H6 are
+complete, tested and deployed.** What remains is H7, H8 and H10, and none
+of the three is blocked on code we control.
 
-| | Item | Owner | Closes |
-|---|---|---|---|
-| H1 | `assignee_id` accepts users outside the org | Backend | gap 7 |
-| H2 | Cards carry no `board_id`; cross-board move has no DB backstop | Backend | gap 8 |
-| H3 | No `rebalance_card_positions` | Backend | gap 9 |
-| H4 | A removed member's socket stays in the org room | Backend | **gap 1** |
-| H5 | Drag-and-drop is mouse-only | Frontend | gap 10 |
-| H6 | Assignee picker must offer only org members | Frontend | pairs with H1 |
-| H7 | No CI | DevOps | gap 11 |
-| H8 | Deploy pipeline documented honestly; Netlify not git-connected | DevOps | gap 12 |
-| H9 | Tests for H1–H4, each failing before and passing after | QA | — |
-| H10 | Read-only production smoke test, `scripts/smoke-prod.mjs` | QA | partially gap 6 |
+| | Item | Owner | State | Closes |
+|---|---|---|---|---|
+| H1 | Assignee must be a member of the card's org | Backend | **Done** — `0011`, composite FK `cards(org_id, assignee_id) → memberships(org_id, user_id)` | gap 7 |
+| H2 | Cards carry `board_id`; FK widened to `(list_id, board_id, org_id)` | Backend | **Done** — `0012` | gap 8 |
+| H3 | `rebalance_card_positions`, SECURITY INVOKER, anon revoked | Backend | **Done** — `0013` | gap 9 (half) |
+| H4 | A removed member's socket is evicted from the org room | Backend | **Done** — `user:<uuid>` index room, `evictUserFromOrg()` | **gap 1** |
+| H5 | Keyboard-accessible reordering | Frontend | **Done** — Space grabs, arrows move, Space/Enter drops, Escape cancels, `aria-live` announcements | gap 10 |
+| H6 | Assignee picker offers only org members | Frontend | **Done** — a departed assignee is kept and labelled, not dropped | pairs with H1 |
+| H7 | CI | DevOps | **Written, never run** — `.github/workflows/ci.yml` exists; repository secrets need a human | gap 11, still open |
+| H8 | Deploy pipeline documented honestly | DevOps | **In progress** — `docs/deployment.md` being written now | gap 12, still open |
+| H9 | Tests for H1–H4, failing before and passing after | QA | **Done at the API level** — `hardening.test.mjs`, 20 checks. The SQL suite was **not** extended | — |
+| H10 | Read-only production smoke test | QA | **Not written** — `scripts/smoke-prod.mjs` is not in the repo | partially gap 6 |
+
+Deployed state: migrations `0011`–`0013` applied to **both** dev and prod,
+both at `0013`; backend live at commit `3731804`; frontend redeployed with
+H5 and H6. Both surfaces verified serving.
 
 Acceptance criteria for the pass: `docs/integration-checklist.md` §8.
 
@@ -134,7 +157,7 @@ Acceptance criteria for the pass: `docs/integration-checklist.md` §8.
 
 **Not proven on `flowspace-v2-prod`, and why:**
 
-The 39 backend checks and the SQL suite are built on `supabase/seed.sql` —
+The 59 backend checks and the SQL suite are built on `supabase/seed.sql` —
 two fixed tenants, fixed uuids, six accounts including the dual-org
 contractor. Prod deliberately has no seed and must keep zero rows. The
 suites therefore **cannot** run there; pointing them at prod would mean
@@ -150,21 +173,23 @@ seeding it, which the hardening contract forbids. Consequently, on prod:
   the Netlify origin, every confirmation link goes to the wrong host and
   no new user can finish signing up.
 
-**The first real sign-up is the outstanding test.** H10 adds a read-only
-smoke test that raises the floor but cannot close this: by design it
-creates nothing.
+**The first real sign-up is the outstanding test.** H10 would add a
+read-only smoke test that raises the floor but cannot close this — by
+design it creates nothing — and H10 is not written yet.
 
 ### Environment
 
 | Project | Ref | Contents |
 |---|---|---|
-| `flowspace-v2-dev` | `hjylkhswlwqiwvztynkw` | all migrations + seed |
-| `flowspace-v2-prod` | `ajkzoiqsvcibvcodkuzs` | all migrations, **no seed, zero rows** |
+| `flowspace-v2-dev` | `hjylkhswlwqiwvztynkw` | all migrations (`0001`–`0013`) + seed |
+| `flowspace-v2-prod` | `ajkzoiqsvcibvcodkuzs` | all migrations (`0001`–`0013`), **no seed, zero rows** |
 
 Never point a deployment at dev: its seed publishes six accounts sharing
-`password123`. Two prod dashboard settings are still manual — **Site URL**
-set to the Netlify origin, and **leaked-password protection** enabled.
-Confirm both; neither has an automated check.
+`password123`. Two prod dashboard settings are still manual and neither has
+an automated check — **Site URL** set to the Netlify origin (unconfirmed),
+and **leaked-password protection**, which the Supabase linter confirms is
+currently **DISABLED** on prod. The second is a known-bad state, not an
+unknown one; it is a dashboard toggle and needs a human.
 
 ---
 
@@ -173,7 +198,12 @@ Confirm both; neither has an automated check.
 Not started. Auto-subtasks, priority suggestions, standup summaries, via
 the Claude API. Spec to think against: `docs/phase-3-spec.md`.
 
-Hard dependency on Phase 2, now satisfied: cards exist. The new surfaces
+Hard dependency on Phase 2, now satisfied: cards exist, and H1–H6 are
+closed — the spec's precondition. Note for whoever starts it: H2 changed
+the card shape. Cards carry a NOT NULL `board_id`, so bulk inserts of
+AI-generated subtasks must supply it.
+
+The new surfaces
 Phase 3 introduces, none of which exist in the repo today, are an outbound
 paid API call, a secret (`ANTHROPIC_API_KEY`) that must never reach the
 browser, per-tenant cost exposure, and a class of latency the current UI
@@ -189,8 +219,15 @@ Not started. A limited external view built on the existing read-only
 The role and its policies exist and are asserted at both levels — `T08` for
 boards, `T21` for lists and cards. What Phase 4 adds is the external-facing
 surface, per-board scoping (which boards a client sees, not just which
-org), and revocation that actually works. Gaps 1 and 3 both land here; H4
-is closing the first of them early.
+org), and revocation that actually works.
+
+**The blocker on this phase is closed.** Gap 1 — a removed member's socket
+staying in the org room — was the item `docs/architecture.md` said had to
+be fixed before the client portal, because revoking an outsider's access is
+the entire feature. H4 closed it, and `H4.1`–`H4.7` prove it on dev. Gap 3
+still lands here: a removed member's access token stays *valid* for up to
+an hour, though RLS refuses them everything. That is the residual, and it
+is narrower than the thing that blocked the phase.
 
 ---
 
@@ -212,24 +249,36 @@ Gaps 1–5 are from `docs/architecture.md`. Gaps 6–12 are the ones the
 deployment and the hardening pass surfaced. Deadlines marked *(recommended)*
 are a proposal, not something an existing doc already commits to.
 
-### 1. A removed member keeps their socket in the org room
+**Closed by the hardening pass: 1, 7, 8, 10, and half of 9.** Closed items
+are struck through and kept rather than deleted, so a later reader can see
+what the shape of the system used to be. **Still open: 2, 3, 4, 5, 6, 11,
+12, and the uniqueness half of 9.**
 
-**What:** removing a member deletes the membership, so RLS blocks them over
-REST immediately — but their open socket stays joined to `org:<uuid>` and
-keeps receiving that tenant's broadcasts until it disconnects or switches
-org. Fixing it needs a user-id → socket-id index so the server can evict
-the socket.
+### 1. ~~A removed member keeps their socket in the org room~~ — CLOSED (H4)
 
-**Deadline was Phase 4** — `docs/architecture.md`: *"Fix this before the
-client portal ships, where revoking an external party's access is the
-entire point."* **Now being closed early, in this hardening pass, as H4.**
-The deadline does not move; the expected close date does. Until H9's
-eviction test passes, treat this gap as open — the fix landing is not the
-same as the fix being proven.
+**What it was:** removing a member deleted the membership, so RLS blocked
+them over REST immediately, but their open socket stayed joined to
+`org:<uuid>` and kept receiving that tenant's broadcasts until it
+disconnected or switched org. Open since Phase 1; the deadline was Phase 4,
+because revoking an external party's access is the entire point of the
+client portal.
 
-**Phase 2 made the window more expensive, not longer.** The leak now
-carries every card move, title and description on every board in the
-tenant, not just board creates. Same duration, much more data.
+**Closed in the hardening pass as H4.** Every socket joins a `user:<uuid>`
+index room at connection time — an index, never a broadcast target — so
+`evictUserFromOrg()` can find one person's sockets and force them out of
+`org:<uuid>` the moment their membership is deleted. Proven by
+`hardening.test.mjs` `H4.1`–`H4.7` on dev: the removed socket is silent
+across four subsequent writes while a control socket receives all of them,
+REST returns 404, and the evicted socket cannot re-join. Recorded as CLOSED
+in `docs/architecture.md`.
+
+**The residual, stated plainly so "H4 shipped" is not misread as "removal
+is instant everywhere":** the removed member still holds a **valid access
+token for up to an hour** (gap 3). RLS refuses them everything, because the
+membership row is gone. What remains is token *validity*, not authority.
+
+**Caveat that applies to everything on this page:** proven on dev. Prod has
+no members to remove.
 
 ### 2. Broadcasts are at-most-once
 
@@ -256,11 +305,11 @@ expiry (default 1 hour), so sign-out is not enforced server-side straight
 away. Same behaviour PostgREST has with the same JWT. The fix is a
 revocation list, not a shorter cache.
 
-**Phase 4 (recommended), hard requirement by Phase 5.** Unchanged by the
-hardening pass, and worth restating precisely because H4 closes the socket
-half of the same story: after H4, a removed member is evicted from the room
-but still holds a token that PostgREST will accept for up to an hour. RLS
-stops them reading anything, because the membership row is gone — so the
+**Phase 4 (recommended), hard requirement by Phase 5. Still open.**
+Unchanged by the hardening pass, and now the whole of what is left of gap
+1's story: H4 has shipped, so a removed member **is** evicted from the room,
+but they still hold a token that PostgREST will accept for up to an hour.
+RLS stops them reading anything, because the membership row is gone — the
 residual exposure is the token's validity, not its authority. Do not let
 "H4 shipped" be read as "revocation is instant".
 
@@ -277,8 +326,8 @@ linter (lints 0028/0029) must be run after every DDL change.
 **Question closed:** this page previously asked whether
 `rebalance_list_positions()` was SECURITY DEFINER. It is **SECURITY
 INVOKER** (`0009`), deliberately, with the anon revoke present, and `T23`
-and `T24` assert both. H3's `rebalance_card_positions` must match — the
-hardening contract says so explicitly.
+and `T24` assert both. H3's `rebalance_card_positions` (`0013`) matches:
+SECURITY INVOKER with the anon revoke, covered by `H3.1`–`H3.4`.
 
 ### 5. Realtime has no reconnect-storm handling
 
@@ -300,33 +349,48 @@ never run against prod.
 as an event.** Someone should perform it deliberately: sign up, confirm the
 email actually arrives and its link resolves to the Netlify origin, create
 a workspace, invite a second address, redeem it, open a board in two
-browsers, and record the result. H10's smoke test covers the read-only half
-and must not be mistaken for this.
+browsers, and record the result. H10's smoke test would cover the read-only
+half and must not be mistaken for this — and it is not written yet.
 
-### 7. `assignee_id` accepted users outside the org
+**Two prod settings are part of this gap and no test can reach them:**
+**Site URL** (unconfirmed) and **leaked-password protection** (confirmed
+**off** by the linter). Both are dashboard toggles.
 
-**What:** `cards.assignee_id` referenced `profiles(id)` — any profile,
-including another tenant's. Not a leak (the assignee still cannot read the
-card) but an invariant the schema did not hold.
+### 7. ~~`assignee_id` accepted users outside the org~~ — CLOSED (H1, H6)
 
-**Closing now as H1**, structurally, via a composite FK to `memberships`.
-H6 makes the UI offer only members. Until H9 covers it, open.
+**What it was:** `cards.assignee_id` referenced `profiles(id)` — any
+profile, including another tenant's. Not a leak (the assignee still could
+not read the card) but an invariant the schema did not hold.
 
-### 8. A card could be moved to another board of the same tenant
+**Closed as H1**, structurally: `memberships` gained `unique (org_id,
+user_id)` and `cards` a composite FK `(org_id, assignee_id)` → that key,
+nullable and `ON DELETE SET NULL`, so removing a member unassigns rather
+than blocks. H6 makes the UI offer only org members and keeps a departed
+assignee visible with a label rather than silently blanking the card.
+Covered by `H1.1`–`H1.5` on dev. The SQL suite was not extended for this.
 
-**What:** `0009`'s composite key was blind to this — same `org_id`, so
-`(list_id, org_id)` resolved — leaving the route's own 404 check as the only
-enforcement. `K8` documents exactly that.
+### 8. ~~A card could be moved to another board of the same tenant~~ — CLOSED (H2)
 
-**Closing now as H2**, by widening the key to
-`(list_id, board_id, org_id)`. Note for QA: the route check stays, so the
-observable status for a same-tenant cross-board move remains **404**, while
-a cross-tenant move remains **400**. Two different refusals, both correct.
+**What it was:** `0009`'s composite key was blind to this — same `org_id`,
+so `(list_id, org_id)` resolved — leaving the route's own 404 check as the
+only enforcement. `K8` documents exactly that.
+
+**Closed as H2** (`0012`): cards carry `board_id` and the key is widened to
+`(list_id, board_id, org_id)`. A same-tenant wrong-board move is now
+refused by the database, not just by the route. The route check stays, so
+the observable status for a same-tenant cross-board move is still **404**
+and a cross-tenant move is still **400** — two different refusals, both
+correct, and the status surface did not change. Covered by `H2.1`–`H2.4`.
+
+**Side effect worth knowing about downstream:** `cards` has a new NOT NULL
+column. Anything that inserts cards in bulk — Phase 3's AI subtasks, in
+particular — must supply `board_id`. See `docs/phase-3-spec.md`.
 
 ### 9. Cards have no position rebalance, and no position uniqueness
 
-**What:** `rebalance_list_positions` exists; cards have no equivalent, and
-cards are where fractional drift actually accumulates. H3 adds it.
+**Half closed.** `rebalance_card_positions(p_list uuid)` now exists
+(`0013`), SECURITY INVOKER with the anon revoke, asserted by `H3.1`–`H3.4`.
+That was H3 and it is done.
 
 **Second, separate issue, not covered by H3 and not in the contract:**
 `lists` has `unique (board_id, position)` (deferrable); `cards` has **no**
@@ -339,33 +403,53 @@ the concurrency expectation in the integration checklist applies to lists
 only. **Needs a decision, not a patch.** Recommended: decide by Phase 3,
 since AI-generated subtasks will insert cards in bulk.
 
-### 10. Drag-and-drop was mouse-only
+### 10. ~~Drag-and-drop was mouse-only~~ — CLOSED (H5)
 
-**What:** no keyboard path to reorder — an accessibility failure and a
-credibility problem for a sellable product.
+**What it was:** no keyboard path to reorder — an accessibility failure and
+a credibility problem for a sellable product.
 
-**Closing now as H5.** Open until keyboard grab/move/drop/cancel, focus
-management and the `aria-live` announcement are confirmed by hand; there is
-no automated coverage for this and none planned in H9.
+**Closed as H5.** Space grabs, arrows move, Space or Enter drops, Escape
+cancels, with `aria-live` announcements. Verified in a browser with real
+key events, including that a move persists server-side and that Escape
+restores the original position without committing. There is still no
+automated coverage for this path — it is a manual gate
+(`docs/integration-checklist.md` §8.5), so it can regress silently.
 
-### 11. No CI
+### 11. No CI — still open
 
 **What:** nothing runs the suites automatically. Every green result in this
 document was produced by a human running a command.
 
-**Closing now as H7.** Note the standing limitation: CI will run the suites
-against **dev**, because that is the only database with fixtures. CI green
-will never mean "prod is correct".
+**H7 is written but has never run.** `.github/workflows/ci.yml` exists;
+what it needs is repository secrets, which require a human with repo
+settings access. Until a real push goes green — and, per §8.7, a real
+failure goes red — this gap is open, and a workflow that has only ever been
+unrun proves nothing. Standing limitation once it does run: CI runs the
+suites against **dev**, the only database with fixtures, so CI green will
+never mean "prod is correct".
 
-### 12. The frontend is deployed by hand
+### 12. Releases are manual — still open
 
-**What:** Netlify is not connected to the repo. Builds are uploaded
-pre-built from `frontend/`, so Netlify's own build-time environment
-variables are never consulted, and the deployed bundle is whatever was on
-one machine at one moment.
+**What:** two halves.
 
-**H8 documents this honestly and deliberately does not fix it** —
-connecting the repo needs account access. Until then, "what is live" is not
-derivable from git, which is a release-management gap rather than a
-security one. Recommended: close before Phase 5, where a billing change
-shipping from an unknown working tree stops being tolerable.
+- **Netlify is not connected to the repo.** Builds are uploaded pre-built
+  from `frontend/`, so Netlify's own build-time environment variables are
+  never consulted, and the deployed bundle is whatever was on one machine
+  at one moment.
+- **Railway auto-deploy is DISABLED on the backend service.** A push to
+  `main` builds nothing; every backend release needs a manual trigger. The
+  GitHub webhook works — the service-level toggle is off.
+
+**H8 documents the pipeline honestly and deliberately does not fix either
+half** — connecting Netlify needs account access. `docs/deployment.md`
+(DevOps) is the authority on the mechanics; this page only records that the
+gap is open. Until it closes, "what is live" is not derivable from git.
+That is a release-management gap rather than a security one, with one sharp
+edge: **a migration cannot rely on a push shipping the matching code.**
+Adding a NOT NULL column (`0012`) ahead of a deploy would have broken
+inserts from the old code the moment it landed; prod had zero rows so
+nothing broke. Expand/contract — add nullable, deploy code that writes it,
+then enforce NOT NULL — is the rule, not a preference.
+
+Recommended: close before Phase 5, where a billing change shipping from an
+unknown working tree stops being tolerable.

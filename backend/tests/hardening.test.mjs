@@ -89,6 +89,11 @@ const sockets = [];
 const boardCleanup = [];
 const membershipCleanup = [];
 
+// The one Northwind board every phase writes to, set up in main(). Held
+// here so H5 can write to it without main() threading it through a second
+// argument list.
+const SCRATCH = { board: null, list: null };
+
 function record(id, ok, detail) {
   results.push({ id, ok, detail });
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${id}  — ${detail}`);
@@ -650,6 +655,181 @@ async function testH4({ aOwner, aAdmin, bOwner, board, list }) {
   );
 }
 
+// =====================================================================
+// H5 — the two ways a naive eviction is wrong.
+//
+// H4 proves a removed member goes silent. It cannot catch either of the
+// mistakes an implementation is most likely to make, because both still
+// produce silence for the one socket H4 watches:
+//
+//   * Evicting only the FIRST socket found. Two tabs is the normal case,
+//     not an edge case, and the second tab would keep streaming.
+//   * Evicting too much — `disconnect()`, or leaving every room the
+//     socket is in. A contractor removed from one client's workspace
+//     would silently lose the live view of every other client they work
+//     for. That is a broken product, and no test that only asserts
+//     silence would ever notice.
+//
+// owner@acme.test is used deliberately: they are natively an owner of
+// Acme, so this exercises a genuine two-tenant user without touching the
+// seeded Northwind membership of dual@contractor.test, which the SQL
+// suite's counts depend on.
+// =====================================================================
+async function testH5({ aOwner, aAdmin, bOwner }) {
+  const membershipId = await inviteBOwnerIntoOrgA({ aOwner, aAdmin, bOwner });
+  membershipCleanup.push(membershipId);
+
+  // A scratch board in Acme, owned by bOwner, so there is somewhere to
+  // write that has nothing to do with Northwind.
+  const { board: boardB } = await api(`/api/orgs/${ORG_B}/boards`, {
+    token: bOwner.token,
+    method: 'POST',
+    body: JSON.stringify({ title: 'hardening probe (acme)' }),
+  });
+  const { list: listB } = await api(`/api/orgs/${ORG_B}/boards/${boardB.id}/lists`, {
+    token: bOwner.token,
+    method: 'POST',
+    body: JSON.stringify({ title: 'Backlog' }),
+  });
+
+  // Two tabs for the same person. Both in Northwind; only the first also
+  // watching their own Acme workspace.
+  const tab1 = await connect(bOwner.token);
+  const tab2 = await connect(bOwner.token);
+
+  const j1a = await join(tab1, ORG_A);
+  const j2a = await join(tab2, ORG_A);
+  const j1b = await join(tab1, ORG_B);
+  record(
+    'H5.1 two tabs joined, one also watching the other tenant',
+    j1a?.ok === true && j2a?.ok === true && j1b?.ok === true,
+    `tab1 A=${j1a?.role}, tab2 A=${j2a?.role}, tab1 B=${j1b?.role}`
+  );
+
+  const heard1 = transcribe(tab1);
+  const heard2 = transcribe(tab2);
+
+  // Baseline: both tabs are genuinely live on Northwind before removal.
+  await api(`/api/orgs/${ORG_A}/boards/${SCRATCH.board.id}/cards`, {
+    token: aAdmin.token,
+    method: 'POST',
+    body: JSON.stringify({ listId: SCRATCH.list.id, title: 'H5 baseline' }),
+  });
+  await sleep(SILENCE_MS / 2);
+  record(
+    'H5.2 baseline: both tabs receive the tenant traffic',
+    heard1.heard.length > 0 && heard2.heard.length > 0,
+    `tab1 heard ${heard1.names()}; tab2 heard ${heard2.names()}`
+  );
+
+  // Remove from Northwind only. Acme membership is untouched.
+  const removed = await apiTry(`/api/orgs/${ORG_A}/members/${membershipId}`, {
+    token: aOwner.token,
+    method: 'DELETE',
+  });
+  await sleep(EVICTION_SETTLE_MS);
+  heard1.reset();
+  heard2.reset();
+
+  // Write to Northwind — neither tab may hear it.
+  await api(`/api/orgs/${ORG_A}/boards/${SCRATCH.board.id}/cards`, {
+    token: aAdmin.token,
+    method: 'POST',
+    body: JSON.stringify({ listId: SCRATCH.list.id, title: 'H5 after removal' }),
+  });
+  await sleep(SILENCE_MS);
+
+  record(
+    'H5.3 EVERY tab is evicted, not just the first',
+    removed.status === 204 && heard1.heard.length === 0 && heard2.heard.length === 0,
+    heard1.heard.length === 0 && heard2.heard.length === 0
+      ? `both tabs silent for ${SILENCE_MS}ms after removal`
+      : `LEAK: tab1 heard ${heard1.names()}; tab2 heard ${heard2.names()}`
+  );
+
+  // Write to Acme — tab1 must STILL hear it. This is the over-eviction
+  // check, and it is the one that fails if eviction disconnects the
+  // socket or clears all of its rooms.
+  heard1.reset();
+  await api(`/api/orgs/${ORG_B}/boards/${boardB.id}/cards`, {
+    token: bOwner.token,
+    method: 'POST',
+    body: JSON.stringify({ listId: listB.id, title: 'H5 other tenant still live' }),
+  });
+  await sleep(SILENCE_MS / 2);
+
+  record(
+    'H5.4 their OTHER tenant is untouched',
+    heard1.heard.length > 0,
+    heard1.heard.length > 0
+      ? `tab1 still receives Acme traffic (${heard1.names()})`
+      : 'OVER-EVICTION: removal from one tenant killed their other workspace'
+  );
+
+  // And the socket is still connected at all — a disconnect would also
+  // have produced H5.3's silence, for entirely the wrong reason.
+  record(
+    'H5.5 the socket was evicted, not disconnected',
+    tab1.connected && tab2.connected,
+    `tab1 connected=${tab1.connected}, tab2 connected=${tab2.connected}`
+  );
+
+  await apiTry(`/api/orgs/${ORG_B}/boards/${boardB.id}`, {
+    token: bOwner.token,
+    method: 'DELETE',
+  });
+}
+
+/**
+ * Put owner@acme.test into Northwind through the real invitation flow,
+ * tolerating residue from an aborted run. Shared by H4 and H5 so the
+ * membership under test is always a genuine one.
+ */
+async function inviteBOwnerIntoOrgA({ aOwner, aAdmin, bOwner }) {
+  const existing = await findMembership(aOwner.token, USER_B_OWNER);
+  if (existing) return existing;
+
+  let invite = await apiTry(`/api/orgs/${ORG_A}/invitations`, {
+    token: aAdmin.token,
+    method: 'POST',
+    body: JSON.stringify({ email: 'owner@acme.test', role: 'member' }),
+  });
+
+  if (invite.status === 409) {
+    const listed = await api(`/api/orgs/${ORG_A}/invitations`, { token: aAdmin.token });
+    const stale = (listed.invitations ?? []).find((row) => row.email === 'owner@acme.test');
+    if (stale) {
+      await apiTry(`/api/orgs/${ORG_A}/invitations/${stale.id}`, {
+        token: aAdmin.token,
+        method: 'DELETE',
+      });
+    }
+    invite = await apiTry(`/api/orgs/${ORG_A}/invitations`, {
+      token: aAdmin.token,
+      method: 'POST',
+      body: JSON.stringify({ email: 'owner@acme.test', role: 'member' }),
+    });
+  }
+
+  if (invite.status !== 201) {
+    throw new Error(
+      `setup: could not invite owner@acme.test (${invite.status} ${invite.body?.error?.message ?? ''})`
+    );
+  }
+
+  const accepted = await apiTry('/api/invitations/accept', {
+    token: bOwner.token,
+    method: 'POST',
+    body: JSON.stringify({ token: invite.body.token }),
+  });
+  if (accepted.status !== 201) {
+    throw new Error(
+      `setup: invitation not redeemed (${accepted.status} ${accepted.body?.error?.message ?? ''})`
+    );
+  }
+  return accepted.body.membership.id;
+}
+
 /** The membership row for a user in org A, or null. */
 async function findMembership(token, userId) {
   const { status, body } = await apiTry(`/api/orgs/${ORG_A}/members`, { token });
@@ -679,10 +859,16 @@ async function main() {
     body: JSON.stringify({ title: 'Backlog' }),
   });
 
+  SCRATCH.board = board;
+  SCRATCH.list = list;
+
   const card = await testH1({ aOwner, board, list });
   await testH2({ aOwner, board, list, card });
   await testH3({ aOwner, board, list });
   await testH4({ aOwner, aAdmin, bOwner, board, list });
+
+  // H5 re-invites owner@acme.test, because H4 has just removed them.
+  await testH5({ aOwner, aAdmin, bOwner });
 }
 
 main()

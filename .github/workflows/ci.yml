@@ -3,18 +3,25 @@ name: CI
 # H7. Two independent gates:
 #
 #   frontend — the production Vite build compiles.
-#   backend  — the 39 checks in backend/tests/*.mjs run against a real
+#   backend  — the 59 checks in backend/tests/*.mjs run against a real
 #              server and the DEV Supabase project.
 #
 # The backend suites are not unit tests. They boot the API on :4000, sign
 # in as the six seeded accounts from supabase/seed.sql, and write and
 # delete real rows. That means they need real credentials, and they need
 # the SEEDED project — see the guard in "Verify the CI secrets" below.
+#
+# What CI does NOT cover: supabase/tests/rls.test.sql (psql-driven, no npm
+# script, stays manual) and scripts/smoke-prod.mjs (points at live URLs).
+# See docs/deployment.md.
 
 on:
   pull_request:
   push:
     branches: [main]
+  # So a human can re-run CI straight after adding the repository secrets,
+  # without having to invent a commit.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -50,7 +57,8 @@ jobs:
       # carry whatever CI had — which is nothing. The app tolerates that
       # at build time (frontend/src/lib/supabase.js only throws when the
       # module is imported in a browser), so this step is a COMPILE CHECK
-      # and nothing more.
+      # and nothing more. Verified locally against an empty env directory:
+      # the build succeeds with zero VITE_* variables defined.
       #
       # The output is therefore NOT deployable and is deliberately not
       # uploaded as an artifact. The real production bundle is built on a
@@ -63,6 +71,15 @@ jobs:
     name: Backend suites (dev Supabase)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    # Fork pull requests get no secrets, so this job could only ever fail
+    # for them — a permanently red check that says nothing about the code.
+    # The repo is public, so that is a live possibility. Skip it there; a
+    # fork's first backend run is the push to main after the merge.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+
     defaults:
       run:
         working-directory: backend
@@ -90,15 +107,21 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
 
+      # Only two secrets exist, and only these two are secrets.
+      #
+      # CORS_ORIGINS and APP_URL are written literally further down: no
+      # suite reads either one (the API is called from Node with no Origin
+      # header, and I11 only asserts that inviteUrl is non-empty, never its
+      # value), and neither value is sensitive. Making them repository
+      # secrets would only mean two more ways for CI to be red for a reason
+      # that has nothing to do with the commit.
       - name: Verify the CI secrets
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
-          APP_URL: ${{ secrets.APP_URL }}
         run: |
           missing=()
-          for name in SUPABASE_URL SUPABASE_ANON_KEY CORS_ORIGINS APP_URL; do
+          for name in SUPABASE_URL SUPABASE_ANON_KEY; do
             if [ -z "${!name}" ]; then missing+=("$name"); fi
           done
           if [ ${#missing[@]} -ne 0 ]; then
@@ -121,6 +144,9 @@ jobs:
           fi
           echo "secrets present; target project is not prod"
 
+      # devDependencies are required: socket.io-client is a devDependency
+      # and three of the four suites import it. Do not set NODE_ENV before
+      # this step.
       - name: npm ci
         run: npm ci
 
@@ -132,12 +158,10 @@ jobs:
       # NODE_ENV stays `test`: `production` activates the CORS_ORIGINS="*"
       # boot guard in backend/src/config/env.js, which is a production
       # concern and would only obscure failures here.
-      - name: Write backend/.env from the repository secrets
+      - name: Write backend/.env
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
-          APP_URL: ${{ secrets.APP_URL }}
         run: |
           umask 077
           {
@@ -145,19 +169,28 @@ jobs:
             echo "NODE_ENV=test"
             echo "SUPABASE_URL=${SUPABASE_URL}"
             echo "SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}"
-            echo "CORS_ORIGINS=${CORS_ORIGINS}"
-            echo "APP_URL=${APP_URL}"
+            echo "CORS_ORIGINS=http://localhost:5173"
+            echo "APP_URL=http://localhost:5173"
           } > .env
           echo "wrote backend/.env with $(wc -l < .env) keys"
 
       - name: Start the API on :4000 and wait for /health
         run: |
           npm start > "$RUNNER_TEMP/server.log" 2>&1 &
-          echo "SERVER_PID=$!" >> "$GITHUB_ENV"
+          pid=$!
+          echo "SERVER_PID=$pid" >> "$GITHUB_ENV"
           for _ in $(seq 1 30); do
             if curl -fsS http://localhost:4000/health > /dev/null 2>&1; then
               echo "API healthy on :4000"
               exit 0
+            fi
+            # config/env.js throws at boot on a missing key, so a dead
+            # process here is a real failure, not a slow start. Say so now
+            # instead of burning the rest of the timeout.
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo "::error::The API exited before becoming healthy. Server log:"
+              cat "$RUNNER_TEMP/server.log" || true
+              exit 1
             fi
             sleep 1
           done
@@ -165,9 +198,10 @@ jobs:
           cat "$RUNNER_TEMP/server.log" || true
           exit 1
 
-      # realtime + invitations + kanban. Each suite calls
-      # process.exit(1) when any assertion fails and package.json chains
-      # them with &&, so one failed check fails the job.
+      # realtime (R1–R9) + invitations (I1–I12) + kanban (K1–K16) +
+      # hardening (H1–H4 checks) = 59. Each suite calls process.exit(1)
+      # when any assertion fails and package.json chains them with &&, so
+      # one failed check fails the job.
       - name: npm test
         run: npm test
 

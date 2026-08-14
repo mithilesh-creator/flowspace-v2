@@ -15,12 +15,20 @@ expected is a failure even if nothing leaked.
 against `flowspace-v2-dev` and the suites are green there, which is why the
 boxes below are left as a re-runnable gate rather than a to-do list. Run
 them again after any change to policies, routes, rooms or the emitter.
-**Every box in §8 is unchecked** — the hardening pass is in progress.
+**In §8, H1–H6 are met and checked with evidence; H7, H8 and H10 are not**
+— see §8.11.
 
 **Everything here runs against dev.** Prod has zero rows and no seed, so
-none of it can run there. The only production checks that exist are the
-read-only ones in §8.10. Do not read a green run of this document as a
-statement about production.
+none of it can run there. There are no production checks in this document
+that have actually run: §8.10's script does not exist yet. Do not read a
+green run of this document as a statement about production.
+
+**A green build is not evidence a page renders.** During H6, `CardEditor`
+called an undefined `memberOptionLabel`. `npm run build` passed — a
+`ReferenceError` is a runtime fault, not a compile error — and opening any
+card blanked the entire application. Nothing in this document below the
+manual sections would have caught it. Where a box says *in a browser*, that
+is why.
 
 ---
 
@@ -244,9 +252,11 @@ block in this document.
       constraint is satisfied). Asserted by `K8`. **Note the two refusals
       are different on purpose and both are correct: 404 = same tenant,
       wrong board (route); 400 = wrong tenant (`23503`, composite FK).**
-      H2 adds a database backstop for the 404 case; the route check stays,
-      so the observed status must not change. If it becomes 400 after H2,
-      that is a regression in the error surface even though nothing leaked.
+      **H2 (`0012`) has since added the database backstop** — the widened
+      key `(list_id, board_id, org_id)` refuses this move at the database
+      too, and `H2.2` proves it. The route check stays, so the observed
+      status is still 404. If it ever becomes 400, that is a regression in
+      the error surface even though nothing leaked.
 
 ### 3f. Ordering and concurrency
 
@@ -274,22 +284,23 @@ block in this document.
 
 ## 4. Realtime isolation suite
 
-Three Node suites, 39 checks total: `realtime-isolation.test.mjs` (9,
-`R1`–`R9`, board-level), `invitations.test.mjs` (12, `I1`–`I12`), and
+Four Node suites, 59 checks total: `realtime-isolation.test.mjs` (9,
+`R1`–`R9`, board-level), `invitations.test.mjs` (12, `I1`–`I12`),
 `kanban-isolation.test.mjs` (18, `K1`–`K16` plus sub-checks) for lists and
-cards.
+cards, and `hardening.test.mjs` (20, `H1.x`–`H4.x`) for the hardening pass.
 
 ```powershell
 cd backend; npm run test:realtime      # requires the backend running
 cd backend; npm run test:invitations
 cd backend; npm run test:kanban
-cd backend; npm test                   # all three
+cd backend; npm run test:hardening
+cd backend; npm test                   # all four
 ```
 
-Note: `npm test` runs the three Node suites only — **it does not run the
+Note: `npm test` runs the four Node suites only — **it does not run the
 SQL isolation suite**, which is `psql`-driven (§2). "npm test green" is not
-the same as "the isolation suites pass". Both are required. H7 puts the
-Node suites in CI; the SQL suite stays manual.
+the same as "the isolation suites pass". Both are required. H7 would put
+the Node suites in CI; the SQL suite stays manual.
 
 Checks the Kanban suite must keep covering:
 
@@ -324,14 +335,17 @@ Checks the Kanban suite must keep covering:
 - [ ] `presence:sync` stays reserved and unimplemented — it is in
       `socket-events.md` but not in the Phase 2 contract, so it is out of
       scope.
-- [ ] `docs/architecture.md` updated with the Phase 2 tables in "Where the
+- [x] `docs/architecture.md` updated with the Phase 2 tables in "Where the
       tenant boundary actually lives", and with the new assertion counts.
-      **Still outstanding:** that file is headed "Architecture — Phase 1",
-      names only `0005`/`0007` as the real tenant boundary, and cites 17 SQL
-      assertions and 9 realtime checks. It is the most out-of-date document
-      in the repo. Product owns it; queued behind the hardening pass, since
-      H1–H4 will change the same paragraphs again.
+      **Done after the hardening pass:** it now names `0009`'s and `0011`'s
+      composite keys as the strongest boundary, cites 59 backend checks
+      across four suites, and marks gap 1 (H4) CLOSED with the token
+      residual spelled out. Its heading still says "Phase 1".
 - [ ] Frontend production build green: `cd frontend; npm run build`.
+- [ ] **And the built app opened in a browser**, with a card editor
+      actually opened. The build is a compile check; it cannot see a
+      `ReferenceError`. This box exists because a green build shipped a
+      blank app once — see the note at the top of this file.
 - [ ] No new secrets in the repo; `.env.example` still accurate.
 
 ---
@@ -371,13 +385,14 @@ window) signed in as different users, both on the same board.
       all lists and cards, and has no add/edit/delete/drag affordance
       anywhere. Confirm drag is actually disabled, not merely unstyled —
       attempt a drag and confirm nothing moves and no request is sent.
-- [ ] **Removed-member window (gap 1 — being closed by H4).** With a
-      member's board open, remove them from the org in another window.
-      Confirm their REST calls fail immediately, and record what their open
-      socket still receives. Before H4 it keeps receiving `card:*` events;
-      after H4 it must receive nothing. Run this **both** before and after
-      the H4 change and record both results — the before-run is what makes
-      the after-run mean something. Automated version: §8.4.
+- [ ] **Removed-member window (gap 1 — CLOSED by H4).** With a member's
+      board open, remove them from the org in another window. Their REST
+      calls must fail immediately **and their open socket must receive
+      nothing** — before H4 it kept receiving `card:*` events until the tab
+      closed. Automated version: §8.4, `H4.5`. Keep this as a re-runnable
+      manual gate. Note what it does *not* prove: their access token stays
+      valid for up to an hour, so signing them out is not what happened —
+      RLS refusing them is.
 - [ ] **Deep link / refresh.** Hard-refresh directly on a board URL. It
       loads (SPA redirect is in `netlify.toml`; locally Vite handles it).
       A board id from another tenant in the URL shows a clean not-found,
@@ -394,7 +409,9 @@ Recorded as met on 13 August 2026:
 
 - [x] §1–§6 worked through against `flowspace-v2-dev`.
 - [x] Both isolation suites pass on dev — the SQL one (`T01`–`T24`) **and**
-      the Node ones (39 checks: 9 realtime, 12 invitation, 18 Kanban).
+      the Node ones (39 checks: 9 realtime, 12 invitation, 18 Kanban —
+      the count at Phase 2 sign-off; the hardening pass has since taken it
+      to 59, see §4).
 - [x] `docs/socket-events.md` carries all eight Phase 2 events.
 - [x] `docs/case-studies/phase-2-kanban.md` DRAFT banner removed.
 - [x] `docs/product-roadmap.md` Phase 2 row updated.
@@ -414,9 +431,17 @@ collapse "deployed" into "verified in production".
 
 ## 8. Phase 2 hardening pass — H1–H10
 
-The acceptance gate for `docs/phase-2-hardening-contract.md`. **Every box
-below is unchecked.** All of it runs against `flowspace-v2-dev` except
-§8.10.
+The acceptance gate for `docs/phase-2-hardening-contract.md`. All of it
+runs against `flowspace-v2-dev` except §8.10.
+
+**Where this stands.** H1–H6 are complete, tested and deployed; their boxes
+are checked below with the evidence that checked them. H7 is written but
+has never run, H8 is being written, H10 is not written. Migrations
+`0011`–`0013` are applied to dev **and** prod, both at `0013`.
+
+**The caveat that applies to every checked box in this section:** the
+evidence is a green run against `flowspace-v2-dev`. Prod has zero rows and
+cannot run any of it. Nothing here is a statement about production.
 
 The contract's own rule for H9 governs this whole section: each fix needs a
 test that **fails before it and passes after**. A test written after the
@@ -424,175 +449,252 @@ fix, which passes first time, has proved that the code does what it does —
 not that it does what was missing. Where a box says *record both runs*, a
 single green run is not evidence.
 
-### 8.1 H1 — assignee must be a member of the card's org
+### 8.1 H1 — assignee must be a member of the card's org — **met**
 
-- [ ] `memberships` has a referenceable `unique (org_id, user_id)`, and
-      `cards` has a composite FK `(org_id, assignee_id)` → that key.
-- [ ] Assigning a card to a profile **in another tenant** → **400**
-      (`23503`). Record the before-run: on `0009`'s schema it returns 200.
-- [ ] Assigning to a member of the same org → **200**.
-- [ ] `assigneeId: null` still clears the assignee → **200**. An unassigned
-      card must remain a valid card.
-- [ ] Removing a member **unassigns** their cards rather than failing.
-      Delete a membership that has cards assigned; the delete succeeds, the
-      cards survive with `assignee_id` null, and `org_id` is **untouched**.
-      *(A bare `ON DELETE SET NULL` on a composite key nulls every
-      referencing column, and `org_id` is NOT NULL — that failure mode
-      shows up as the member deletion erroring, not as bad data.)*
+Migration `0011`. Evidence: `hardening.test.mjs` `H1.1`–`H1.5`, green on
+dev.
+
+- [x] `memberships` has a referenceable `unique (org_id, user_id)` (it
+      already did, from `0003`), and `cards` has a composite FK
+      `(org_id, assignee_id)` → that key.
+- [x] Assigning a card to a profile **in another tenant** → **400**
+      (`23503`). `H1.2`, using `owner@acme.test` — a real profile in
+      another tenant, not a fabricated uuid.
+- [x] Assigning to a member of the same org → **200**. `H1.1`. Without
+      this one, "assignment is refused" could just mean assignment is
+      broken.
+- [x] `assigneeId: null` still clears the assignee → **200**. `H1.5`.
+- [x] The refused write left nothing half-applied. `H1.4`.
+- [x] The database refuses the same write with Express out of the path.
+      `H1.3` goes straight at PostgREST — this is what proves the
+      constraint is structural rather than a route check.
+- [x] Removing a member **unassigns** their cards rather than failing. The
+      key is declared `on delete set null (assignee_id)` with the column
+      list, so `org_id` is not nulled. *Verified by reading `0011`, not by
+      a test — the runtime path (delete a membership that has cards
+      assigned, confirm the delete succeeds and the cards survive) has no
+      automated coverage. Worth adding.*
 - [ ] The dual-org contractor can be assigned a card in **both** tenants.
-- [ ] SQL suite extended with the cross-tenant assignee case.
-- [ ] Supabase linter clean after the DDL.
+      **Not covered.** No assertion exercises this, and it is the account
+      most likely to expose a wrong constraint.
+- [ ] SQL suite extended with the cross-tenant assignee case. **Not done** —
+      the suite is still `T01`–`T24`. `H1.3` covers the same ground through
+      PostgREST rather than `psql`, which is close but is not the SQL
+      suite.
+- [ ] Supabase linter clean after the DDL. **Not recorded.** Run it and
+      write down the result.
 
-### 8.2 H2 — cards carry `board_id`
+### 8.2 H2 — cards carry `board_id` — **met**
 
-- [ ] Migration is ordered add-nullable → backfill → NOT NULL → key, and
-      applies over **existing rows**. Verify on a database with cards in it,
-      not only on a fresh reset — a fresh database cannot fail this.
-- [ ] `lists` has the unique constraint the widened key targets, and `cards`
-      references `(list_id, board_id, org_id)`.
-- [ ] Same-tenant cross-board move still returns **404** from the route
-      (see §3e). The new key is the backstop, not the message.
-- [ ] With the route check bypassed (or by direct SQL as an authorised
-      member), the same move is refused by the **database** → `23503`. This
-      is the assertion that proves H2 did anything; without it the test only
-      re-proves `K8`.
-- [ ] Cross-tenant move still **400**. `K7`/`T20` still pass unchanged.
+Migration `0012`. Evidence: `hardening.test.mjs` `H2.1`–`H2.4`, green on
+dev, and `0012` applied over dev's seeded rows before prod.
+
+- [x] Migration is ordered add-nullable → backfill → NOT NULL → key, and
+      applied over **existing rows** on dev, which has cards in it. Prod
+      had zero rows, so prod's apply proves nothing about the backfill;
+      dev's does.
+- [x] `lists` has the unique constraint the widened key targets
+      (`lists_id_board_id_org_id_key`), and `cards` references
+      `(list_id, board_id, org_id)`.
+- [x] Same-tenant cross-board move still returns **404** from the route.
+      `H2.1`. The new key is the backstop, not the message — the error
+      surface did not change.
+- [x] The same move straight at PostgREST, with Express out of the path, is
+      refused by the **database** → `23503`. `H2.2`. This is the assertion
+      that proves H2 did anything; without it the test only re-proves `K8`.
+- [x] The card really is where it started after the refusal. `H2.3`.
+- [x] Cross-tenant move still **400**. `H2.4`, and `K7`/`T20` unchanged.
 - [ ] `board_id` in a request body is still ignored — the column is
-      denormalised, not client-supplied. A `POST /cards` or `/move` carrying
-      `board_id` for another board of the same tenant must not honour it.
+      denormalised, not client-supplied. **Not covered by an assertion.**
+      §3e's equivalent for `org_id` is; this one is not.
 - [ ] Card PATCH/DELETE/move no longer read `lists` to resolve the board.
-      (The point of H2 was the extra read; confirm it is actually gone.)
-- [ ] SQL suite extended for the same-tenant wrong-board move.
+      **Not confirmed.** The extra read was the stated motivation for H2;
+      nothing here checks it is actually gone.
+- [ ] SQL suite extended for the same-tenant wrong-board move. **Not done** —
+      still `T01`–`T24`. `H2.2` covers it through PostgREST.
 
-### 8.3 H3 — `rebalance_card_positions(p_list uuid)`
+### 8.3 H3 — `rebalance_card_positions(p_list uuid)` — **met**
 
-- [ ] Exists, **SECURITY INVOKER**, with an explicit
-      `revoke execute … from anon`. Same reasoning as
-      `rebalance_list_positions`; a DEFINER version reorders any tenant's
-      list for anyone who can guess a uuid.
-- [ ] Rewrites positions to `1..n` and preserves the visible order,
-      including the created_at tie-break for cards that share a position
-      (which, per gap 9, is a state cards can actually reach).
-- [ ] Callable by a member of that list's org; a member of another org gets
-      zero rows affected, not an error and not someone else's list; `anon`
-      is refused.
-- [ ] SQL suite extended, mirroring `T23`/`T24`.
-- [ ] Supabase linter clean.
+Migration `0013`. Evidence: `hardening.test.mjs` `H3.1`–`H3.4`, green on
+dev.
 
-### 8.4 H4 — a removed member's socket is evicted *(the one that matters)*
+- [x] Exists, **SECURITY INVOKER**, with an explicit
+      `revoke execute … from anon`. `H3.4` asserts `anon` cannot execute
+      it — the migration `0008` rule, tested rather than assumed.
+- [x] Rewrites positions and leaves whole numbers behind. `H3.1`, `H3.2`.
+- [x] Pointed at another tenant's list it does nothing. `H3.3` — that is
+      what SECURITY INVOKER buys, and it is the assertion that would fail
+      if someone "fixed" it to DEFINER.
+- [ ] The `created_at` tie-break for cards that share a position — the
+      state gap 9 says cards can actually reach — is **not** separately
+      asserted.
+- [ ] SQL suite extended, mirroring `T23`/`T24`. **Not done.**
+- [ ] Supabase linter clean. **Not recorded.**
 
-The highest-value check in this document. Gap 1 has been open since Phase 1
-and is the blocker on the client portal.
+### 8.4 H4 — a removed member's socket is evicted — **met** *(the one that mattered)*
 
-- [ ] **The proof, automated.** Two authenticated sockets in `org:A`, both
-      joined. Remove one member via
-      `DELETE /api/orgs/{ORG_A}/members/{membershipId}`. Then, from the
-      remaining member, perform a real write — create and move a card.
-      Assert the removed member's socket receives **nothing** on any
-      `card:*`, `list:*` or `board:*` channel over a quiet window, the way
-      `R6` and the tenant-B silence assertion already do. Assert on
-      **silence over time**, not on a single tick.
-- [ ] **Record the before-run.** On today's code that socket receives every
-      event. If the new test passes against the unfixed server, it is
-      testing the wrong thing — most likely it disconnected the socket
-      itself, or asserted before the broadcast could arrive.
-- [ ] The removed member's socket is out of `org:<uuid>` specifically, and
-      is **not** disconnected outright. They may still be a member of other
-      orgs on the same socket.
+The highest-value check in this document. Gap 1 was open since Phase 1 and
+was the blocker on the client portal. **It is closed.** Every socket joins
+a `user:<uuid>` index room at connection time — an index, never a broadcast
+target — and `evictUserFromOrg()` forces matching sockets out of
+`org:<uuid>` when the membership is deleted.
+
+Evidence: `hardening.test.mjs` `H4.1`–`H4.7`, green on dev.
+
+- [x] **The proof, automated.** `H4.5`: after the removal, the removed
+      member's socket receives nothing across four subsequent writes,
+      asserted as silence over a quiet window rather than on a single tick.
+- [x] **The baseline that makes it mean something.** `H4.2` shows the same
+      socket receiving the tenant's broadcasts *before* the removal, and
+      `H4.4` shows a control socket in the same room receiving all four
+      writes *after* it. A silent socket in a dead room would otherwise
+      pass `H4.5` for the wrong reason.
+- [x] `H4.1` both sockets admitted; `H4.3` the removal itself succeeds;
+      `H4.6` REST is closed to the removed member at the same instant —
+      included so a failure of `H4.5` cannot be read as "the removal never
+      happened".
+- [x] The evicted user cannot simply re-`org:join`. `H4.7` — confirmed, not
+      assumed.
+- [x] No Redis. `fetchSockets()` over the user room, per the contract.
+- [x] `docs/architecture.md` updated: gap 1 marked CLOSED, with the
+      one-process assumption behind `fetchSockets()` named as the single
+      call that must change if the deployment stops being one Node process.
+      `docs/socket-events.md` is Backend's file.
+- [ ] The socket is out of `org:<uuid>` specifically and **not**
+      disconnected outright. Implied by the multi-org design but not
+      separately asserted.
 - [ ] **Multi-org case:** a user in A and B, one socket joined to both,
-      removed from A only. They must stop receiving A's traffic and keep
-      receiving B's. This is the case a naive `disconnect()` gets wrong.
-- [ ] **Multi-socket case:** the same user with two open tabs. **Both**
-      sockets leave the room. An index keyed by user id must fan out, not
-      return the first match.
+      removed from A only — must stop receiving A's traffic and keep
+      receiving B's. **Not covered.** This is the case a naive
+      `disconnect()` gets wrong, and it is the one worth adding next.
+- [ ] **Multi-socket case:** the same user with two open tabs; both sockets
+      leave the room. **Not covered.** An index keyed by user id must fan
+      out, not return the first match.
 - [ ] `member:removed` still reaches the remaining members with
-      `{orgId, membershipId, userId}` — eviction must not swallow the
-      broadcast that tells everyone else the person is gone.
+      `{orgId, membershipId, userId}`. **Not separately asserted.**
 - [ ] A realtime failure during eviction does not roll back or 500 the
-      removal itself. The membership delete is the authoritative act; the
-      socket is bookkeeping.
-- [ ] The evicted user cannot simply re-`org:join`. The membership is gone,
-      so `getOrgRole` returns nothing and the join is refused with
-      `error:unauthorized` — confirm, do not assume.
+      removal itself. **Not covered.**
 - [ ] A member who **leaves** voluntarily is evicted by the same path.
-- [ ] No Redis. `fetchSockets()` is sufficient per the contract; a new
-      external dependency is a contract change.
-- [ ] After H4 lands, update the `member:removed` limitation note in
-      `docs/socket-events.md` (Backend owns that file) and the corresponding
-      paragraph in `docs/architecture.md`. **Also re-read gap 3:** the
-      evicted user still holds a valid access token for up to an hour. H4
-      closes the room, not the session.
+      **Not covered.**
+- [x] **Gap 3 re-read, and it stands.** The evicted user still holds a
+      valid access token for up to an hour. RLS refuses them everything
+      because the membership row is gone, so what remains is token
+      *validity*, not authority. H4 closed the room, not the session.
 
-### 8.5 H5 — keyboard-accessible reordering
+### 8.5 H5 — keyboard-accessible reordering — **met, manually**
 
-No automated coverage exists or is planned. This is a manual gate.
+No automated coverage exists or is planned. This is a manual gate, so it
+can regress silently — re-run it by hand after any change to the board UI.
+Shipped shape: **Space grabs, arrows move, Space or Enter drops, Escape
+cancels**, with `aria-live` announcements.
 
-- [ ] A list and a card can each be grabbed, moved and dropped using only
-      the keyboard, and the move persists.
-- [ ] Cancel (Escape) restores the original position and does not send a
-      request.
+- [x] A card can be grabbed, moved and dropped using only the keyboard, and
+      the move **persists server-side**. Verified in a browser with real key
+      events, not simulated ones.
+- [x] Cancel (Escape) restores the original position **without
+      committing** — verified in the same session.
+- [x] An `aria-live` region announces the operation. *Whether every
+      announcement names the target list and position was not separately
+      recorded; confirm on the next pass.*
+- [ ] Lists as well as cards. Only the card path was recorded.
 - [ ] Focus lands somewhere sensible after a drop and after a cancel, and is
-      never lost to `<body>`.
-- [ ] An `aria-live` region announces grab, each move, drop and cancel —
-      including which list and which position.
+      never lost to `<body>`. **Not recorded.**
 - [ ] Pointer drag-and-drop still works, and the two paths share one
-      optimistic-update path rather than two.
+      optimistic-update path rather than two. **Not recorded.**
 - [ ] A keyboard move that the server rejects rolls back visibly and
-      announces the failure.
+      announces the failure. **Not recorded.**
 - [ ] `client@northwind.test` gets no keyboard grab affordance either.
-      Disabling the pointer path alone would leave a read-only user able to
-      attempt a write with a key press.
+      **Not recorded, and this one matters:** disabling the pointer path
+      alone would leave a read-only user able to attempt a write with a key
+      press.
 
-### 8.6 H6 — assignee picker offers only org members
+### 8.6 H6 — assignee picker offers only org members — **met**
 
-- [ ] The picker is populated from `GET /api/orgs/:orgId/members`, not from
-      a profile search.
+- [x] The picker is populated from `GET /api/orgs/:orgId/members`, not from
+      a profile search. With H1 enforcing membership in the database, this
+      stops the UI from offering a choice the database will reject.
+- [x] A card assigned to someone since removed renders without crashing and
+      shows a **"former member" label** rather than a blank — the departed
+      assignee is kept and labelled, not silently dropped. That is a
+      deliberate product decision: a card losing its assignee invisibly is
+      worse than a card showing that its assignee has gone.
 - [ ] It offers every role including `client`, or deliberately does not —
-      record the decision. A read-only client is a legal assignee under H1's
-      constraint, which may or may not be intended product behaviour.
+      **decision not recorded.** A read-only client is a legal assignee
+      under H1's constraint, which may or may not be intended.
 - [ ] After an org switch the picker shows the new org's members and none of
-      the previous org's.
-- [ ] A card assigned to someone since removed renders without crashing,
-      and shows an unassigned or "former member" state rather than a blank.
+      the previous org's. **Not recorded.**
 - [ ] A failure to load members degrades to a disabled picker, not a broken
-      board.
+      board. **Not recorded.**
 
-### 8.7 H7 — CI
+> **What this section cost, and why the browser box in §5 exists.**
+> `CardEditor` shipped a call to an undefined `memberOptionLabel`.
+> `npm run build` passed, because a `ReferenceError` is a runtime fault and
+> the bundler has no reason to object. Opening any card blanked the whole
+> application. A green production build is not evidence that a page
+> renders; only opening it is.
 
-- [ ] Runs on PR and on push to `main`.
+### 8.7 H7 — CI — **written, never run**
+
+`.github/workflows/ci.yml` exists. **It cannot run**: it needs repository
+secrets, and setting those requires a human with repo settings access.
+Until a real push produces a real result, none of these boxes can be
+checked, and a workflow that has never run proves nothing.
+
+- [ ] Runs on PR and on push to `main`. *(Declared in the file; never
+      observed.)*
 - [ ] Frontend production build.
 - [ ] Backend suites against **dev**, with credentials from repository
       secrets. No secret appears in the workflow file, in logs, or in a
       failure message.
 - [ ] **A deliberately failing test fails the workflow.** Push one, watch it
       go red, remove it. A workflow that has only ever been green has not
-      been tested.
+      been tested — and this one has not even been green.
 - [ ] The SQL suite's absence from CI is recorded in the workflow, since it
       is `psql`-driven and has no npm script. "CI green" must not be read as
       "both isolation suites pass".
 - [ ] CI never points at prod. There is nothing there to test and a write
       would break the zero-rows invariant.
 
-### 8.8 H8 — deploy pipeline documented
+### 8.8 H8 — deploy pipeline documented — **in progress**
 
-Owned by DevOps in `docs/deployment.md`. Product's only check:
+Owned by DevOps in `docs/deployment.md`, which is being written now. Two
+facts it has to carry, recorded here only so they are not lost: **Railway
+auto-deploy is disabled**, so every backend release needs a manual trigger,
+and **Netlify is a manual upload**, not repo-connected. Product's only
+checks:
 
 - [ ] Once `docs/deployment.md` exists, `README.md`'s deployment section
       links to it rather than restating it, and any statement the two share
       is removed from one of them.
-- [ ] Netlify is **not** connected to the repo as part of this pass.
+- [x] Netlify is **not** connected to the repo as part of this pass — still
+      true, and deliberately so.
 
-### 8.9 H9 — coverage for H1–H4
+### 8.9 H9 — coverage for H1–H4 — **met at the API level**
 
-- [ ] Each of H1–H4 has at least one test, and each was **observed failing**
-      against the pre-fix code. Record how it failed, not just that it did.
-- [ ] The 39 existing backend checks and `T01`–`T24` still pass unchanged.
-- [ ] New counts written into `README.md` and `docs/product-roadmap.md` in
-      the same change.
+- [x] Each of H1–H4 has at least one test: `hardening.test.mjs`, 20 checks,
+      `H1.1`–`H1.5`, `H2.1`–`H2.4`, `H3.1`–`H3.4`, `H4.1`–`H4.7`. Each pair
+      of fix-and-proof includes a negative control (`H1.1`, `H4.2`, `H4.4`)
+      so a passing assertion cannot be passing for the wrong reason.
+- [x] The existing backend checks and `T01`–`T24` still pass unchanged. The
+      Node total is now **59**: 9 realtime, 12 invitation, 18 Kanban, 20
+      hardening.
+- [x] New counts written into `README.md`, `docs/product-roadmap.md` and
+      `docs/architecture.md`.
+- [ ] Each test **observed failing** against the pre-fix code, with *how* it
+      failed recorded, not just that it did. **Not recorded here.** The
+      contract requires it; if those before-runs happened, they were not
+      written down, and an unrecorded before-run is not evidence.
+- [ ] The SQL isolation suite extended for H1, H2 and H3, as §8.1–§8.3 each
+      require. **Not done** — it is still `T01`–`T24`. The equivalent
+      coverage exists through PostgREST in `hardening.test.mjs`, which is
+      close but is not the same layer.
 
-### 8.10 H10 — production smoke test
+### 8.10 H10 — production smoke test — **not written**
 
-`scripts/smoke-prod.mjs`, read-only, against the live URLs.
+`scripts/smoke-prod.mjs` does not exist in the repo. Every box below is
+outstanding, and the read-only prod facts recorded elsewhere in these docs
+were established by hand rather than by this script. What it must be when
+it is written: read-only, against the live URLs.
 
 - [ ] `/health` ok.
 - [ ] `/api/orgs` without a token → **401**.
@@ -608,14 +710,35 @@ Owned by DevOps in `docs/deployment.md`. Product's only check:
 - [ ] The script's output distinguishes "prod is reachable and correctly
       wired" from "prod works", because it only ever proves the first.
 
-### 8.11 Hardening sign-off
+### 8.11 Hardening sign-off — partial
 
-- [ ] Migrations apply cleanly to dev **and** prod; advisors clean on both.
-- [ ] Every existing check still passes, plus the new ones.
-- [ ] Frontend production build green; keyboard reordering confirmed by
-      hand.
-- [ ] CI green on a real push, and observed red on a real failure.
-- [ ] **Prod still has zero rows.**
-- [ ] `docs/architecture.md` "Known gaps" updated for whichever of gaps 1,
-      7, 8 and 9 actually closed — with the ones that did not close left
-      standing and unedited.
+**Signed off: H1–H6, on dev.** Not signed off: H7, H8, H10.
+
+- [x] Migrations `0011`–`0013` apply cleanly to dev **and** prod. Both
+      projects are at `0013`. *Advisor cleanliness after the DDL is not
+      recorded — see §8.1 and §8.3.*
+- [x] Every existing check still passes, plus the new ones: **59** Node
+      checks green on dev via `cd backend && npm test`, plus the SQL suite
+      (`T01`–`T24`, unextended).
+- [x] Frontend production build green; keyboard reordering confirmed by
+      hand in a browser. Backend live at commit `3731804`; frontend
+      redeployed with H5 and H6; both verified serving.
+- [x] **Prod still has zero rows.**
+- [x] `docs/architecture.md` "Known gaps" updated: gap 1 marked CLOSED with
+      the token residual named, the gaps that did not close left standing.
+- [ ] CI green on a real push, and observed red on a real failure. **H7
+      cannot run** — repository secrets need a human.
+- [ ] `docs/deployment.md` landed and `README.md` pointing at it rather
+      than restating it. **In progress, DevOps.**
+- [ ] `scripts/smoke-prod.mjs` written. **Not started.**
+- [ ] Two prod dashboard settings, neither of which any automated check in
+      this document can reach:
+      - [ ] **Site URL** set to `https://flowspace-v2.netlify.app`.
+            Unconfirmed. If it is wrong, every email confirmation link
+            points at the wrong host and no new user can finish signing up
+            — which makes it the highest-risk unverified setting in the
+            system, because the first real sign-up is the outstanding test.
+      - [ ] **Leaked-password protection** enabled. **Confirmed DISABLED**
+            by the Supabase linter on the prod project. This is a
+            known-bad state, not an unknown one, and it is a dashboard
+            toggle.

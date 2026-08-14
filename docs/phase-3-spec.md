@@ -10,10 +10,15 @@ fact is checkable in the repo today. Where it proposes a design, it says
 Scope is the three features `CLAUDE.md` names, in that order:
 auto-subtasks, priority suggestions, standup summaries. Nothing else.
 
-**Precondition:** Phase 2 is shipped and the hardening pass H1–H10 is in
-flight. Phase 3 should not start until H1–H4 are closed and their tests
-pass — H1 in particular, because AI-generated cards will want assignees and
-the membership constraint is what makes an assignee meaningful.
+**Precondition: satisfied.** Phase 2 is shipped and hardened. H1–H6 are
+complete, tested and deployed; their tests pass on dev (`hardening.test.mjs`,
+20 checks). H1 in particular mattered here, because AI-generated cards will
+want assignees and the membership constraint is what makes an assignee
+meaningful. What is still outstanding from the pass — CI (H7), the deploy
+documentation (H8), the prod smoke test (H10) — does not block Phase 3.
+
+**One change from the pass that Phase 3 must account for:** H2 changed the
+shape of a card. See §2.1.
 
 ---
 
@@ -59,13 +64,17 @@ opinion.
 **Decisions this raises, all open:**
 
 - **Cards have no priority field today.** `cards` carries `title`,
-  `description`, `position`, `assignee_id`, `due_date`. Adding a priority
+  `description`, `position`, `assignee_id`, `due_date` and — since H2
+  (`0012`) — `board_id`. Adding a priority
   is a migration and a schema decision, and it is a product decision first:
   is priority an enum, a score, or just the existing `position`?
 - If the suggestion reorders cards, it collides directly with `position`,
   and with gap 9 in `docs/product-roadmap.md` — cards have no unique
   constraint on `(list_id, position)`, so a bulk reordering has no
-  collision detection. Resolve gap 9 before building this.
+  collision detection. **H3 closed only half of gap 9:**
+  `rebalance_card_positions(p_list uuid)` now exists (`0013`, SECURITY
+  INVOKER), so fractional drift has a repair path. The missing uniqueness
+  is untouched and still needs a decision before this feature is built.
 - What signal does the model actually have? Titles, descriptions, due
   dates, assignees, list names. It does not know the business. A suggestion
   presented as authoritative will be wrong in ways the team can see, which
@@ -127,6 +136,32 @@ Accepting a set of generated subtasks should call the same insert path as
 creating a card by hand — same policies, same validation, same
 `card:created` broadcasts, same echo suppression. A separate write path is
 a second copy of the rules.
+
+### 2.1 H2 changed the card shape, and bulk inserts are where that lands
+
+Since migration `0012`, **`cards` carries a NOT NULL `board_id`**, and the
+foreign key is `(list_id, board_id, org_id) → lists(id, board_id, org_id)`.
+A card is now structurally pinned to one board, not just to one list in one
+tenant.
+
+Two consequences for this phase, both in auto-subtasks:
+
+- **Every inserted card must supply `board_id`.** Any bulk insert that
+  builds card rows itself — eight subtasks from one click is exactly that
+  case — will be refused outright if it omits the column, and refused by
+  the key if it supplies a `board_id` that does not match the list. This is
+  a reason to accept generated subtasks through the **existing** card
+  routes rather than a new write path: those routes already take the board
+  from the URL, which is where the value should come from. A body-supplied
+  `board_id` is ignored today and must stay ignored.
+- **The refusal is a foreign-key violation, so it surfaces as a 400, not a
+  403.** Code that partially applies a batch and then reports a permission
+  problem will be misleading. See §3.3 on partial application — the
+  all-or-nothing question is sharper now that a whole batch can be rejected
+  for a structural reason.
+
+Nothing else about H2 touches Phase 3. The extra board lookup it removed
+was on the move path, which AI features do not use.
 
 Proposed shape, in the style of the existing routes:
 
@@ -330,7 +365,11 @@ Questions:
   parties. "This was drafted by AI" is exactly the kind of thing an outside
   client should be able to see, and exactly the kind of thing that is
   embarrassing to add retroactively. Design the marker now with the portal
-  in mind.
+  in mind — and note that Phase 4 is no longer blocked: H4 closed the
+  removed-member socket gap, which was the one item `docs/architecture.md`
+  said had to be fixed before the portal shipped. The residual is gap 3, a
+  removed member's access token staying valid for up to an hour while RLS
+  refuses them everything.
 - **Standup summaries are ephemeral text, not rows** — so they need
   labelling in the UI, but no schema. Unless they get stored, in which case
   they do. Another reason to decide the storage question early.
