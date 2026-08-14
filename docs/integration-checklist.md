@@ -18,10 +18,16 @@ them again after any change to policies, routes, rooms or the emitter.
 **In §8, H1–H6 are met and checked with evidence; H7, H8 and H10 are not**
 — see §8.11.
 
-**Everything here runs against dev.** Prod has zero rows and no seed, so
-none of it can run there. There are no production checks in this document
-that have actually run: §8.10's script does not exist yet. Do not read a
-green run of this document as a statement about production.
+**Everything here runs against dev.** Prod has no seed, so the fixtures
+these checks depend on do not exist there. Do not read a green run of this
+document as a statement about production.
+
+Production has since been verified separately, and that evidence lives in
+[`docs/HANDOFF.md`](./HANDOFF.md): sign-up, email confirmation,
+invitations, and 6/6 tenant-isolation checks run as three real accounts.
+`scripts/smoke-prod.mjs` now exists and passes 13/13. Neither replaces
+this document — prod has 0 boards, so nothing here about lists, cards or
+realtime has been exercised by a real user.
 
 **A green build is not evidence a page renders.** During H6, `CardEditor`
 called an undefined `memberOptionLabel`. `npm run build` passed — a
@@ -440,8 +446,10 @@ has never run, H8 is being written, H10 is not written. Migrations
 `0011`–`0013` are applied to dev **and** prod, both at `0013`.
 
 **The caveat that applies to every checked box in this section:** the
-evidence is a green run against `flowspace-v2-dev`. Prod has zero rows and
-cannot run any of it. Nothing here is a statement about production.
+evidence is a green run against `flowspace-v2-dev`. Prod has no seed, so
+none of these fixtures exist there and none of this can run against it.
+Nothing in this section is a statement about production — see
+[`docs/HANDOFF.md`](./HANDOFF.md) for what has been verified there.
 
 The contract's own rule for H9 governs this whole section: each fix needs a
 test that **fails before it and passes after**. A test written after the
@@ -652,8 +660,11 @@ checked, and a workflow that has never run proves nothing.
 - [ ] The SQL suite's absence from CI is recorded in the workflow, since it
       is `psql`-driven and has no npm script. "CI green" must not be read as
       "both isolation suites pass".
-- [ ] CI never points at prod. There is nothing there to test and a write
-      would break the zero-rows invariant.
+- [x] **CI never points at prod.** The workflow hard-fails if
+      `SUPABASE_URL` contains the prod ref — verified locally, all four
+      branches of that guard. This matters more than it did: prod now holds
+      real user data, and these suites write *and delete* rows under fixed
+      seed IDs.
 
 ### 8.8 H8 — deploy pipeline documented — **in progress**
 
@@ -717,13 +728,18 @@ it is written: read-only, against the live URLs.
 - [x] Migrations `0011`–`0013` apply cleanly to dev **and** prod. Both
       projects are at `0013`. *Advisor cleanliness after the DDL is not
       recorded — see §8.1 and §8.3.*
-- [x] Every existing check still passes, plus the new ones: **59** Node
-      checks green on dev via `cd backend && npm test`, plus the SQL suite
+- [x] Every existing check still passes, plus the new ones: **64** Node
+      checks green on dev via `cd backend && npm test` (9 realtime, 12
+      invitation, 18 kanban, 25 hardening), plus the SQL suite
       (`T01`–`T24`, unextended).
 - [x] Frontend production build green; keyboard reordering confirmed by
-      hand in a browser. Backend live at commit `3731804`; frontend
-      redeployed with H5 and H6; both verified serving.
-- [x] **Prod still has zero rows.**
+      hand in a browser. Backend live at commit `7435614` (deployment
+      `5cae9256`); frontend redeployed with H5 and H6; both verified
+      serving, and `scripts/smoke-prod.mjs` passes 13/13 against them.
+- [x] **Nothing in this pass wrote to prod.** Row counts before and after
+      are unchanged. Note the box this replaces once read "prod still has
+      zero rows" — that is no longer the invariant, because real users have
+      since signed up. The invariant is that *we* do not write there.
 - [x] `docs/architecture.md` "Known gaps" updated: gap 1 marked CLOSED with
       the token residual named, the gaps that did not close left standing.
 - [ ] CI green on a real push, and observed red on a real failure. **H7

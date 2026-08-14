@@ -157,32 +157,34 @@ Acceptance criteria for the pass: `docs/integration-checklist.md` §8.
 
 **Not proven on `flowspace-v2-prod`, and why:**
 
-The 59 backend checks and the SQL suite are built on `supabase/seed.sql` —
+The 64 backend checks and the SQL suite are built on `supabase/seed.sql` —
 two fixed tenants, fixed uuids, six accounts including the dual-org
-contractor. Prod deliberately has no seed and must keep zero rows. The
-suites therefore **cannot** run there; pointing them at prod would mean
-seeding it, which the hardening contract forbids. Consequently, on prod:
+contractor. Prod has no seed and must never get one, so the suites
+**cannot** run there.
 
-- Sign-up has never completed. No account exists.
-- Tenant isolation has never been exercised — there is only one possible
-  number of tenants in an empty database, and it is zero.
-- No invitation has been issued or redeemed.
-- No socket has joined an org room, because no org exists.
-- Email confirmation delivery is untested, which makes **Site URL** the
-  highest-risk unverified setting in the system: if it does not point at
-  the Netlify origin, every confirmation link goes to the wrong host and
-  no new user can finish signing up.
+That gap has since been closed a different way: **real users signed up.**
+Prod now holds 3 confirmed accounts, 3 workspaces and 5 memberships, which
+made a direct check possible. Verified on prod, as those actual accounts,
+every block rolled back — **6/6**:
 
-**The first real sign-up is the outstanding test.** H10 would add a
-read-only smoke test that raises the floor but cannot close this — by
-design it creates nothing — and H10 is not written yet.
+- Sign-up and email confirmation complete. That also settles **Site URL**,
+  previously the highest-risk unverified setting: confirmation links could
+  not resolve if it were wrong.
+- Invitations are issued and redeemed — one workspace has an owner plus a
+  `client`.
+- Tenant isolation holds: cross-tenant reads, writes, roster access and
+  profile visibility all refused; `anon` reads nothing.
+
+**Still not proven on prod:** boards, lists, cards and realtime. Prod has
+0 boards, so no socket has yet joined an org room with real data behind
+it. Those rest on the dev suites alone.
 
 ### Environment
 
 | Project | Ref | Contents |
 |---|---|---|
 | `flowspace-v2-dev` | `hjylkhswlwqiwvztynkw` | all migrations (`0001`–`0013`) + seed |
-| `flowspace-v2-prod` | `ajkzoiqsvcibvcodkuzs` | all migrations (`0001`–`0013`), **no seed, zero rows** |
+| `flowspace-v2-prod` | `ajkzoiqsvcibvcodkuzs` | all migrations (`0001`–`0013`), **no seed**, **3 real users / 3 workspaces / 0 boards** |
 
 Never point a deployment at dev: its seed publishes six accounts sharing
 `password123`. Two prod dashboard settings are still manual and neither has
@@ -339,22 +341,26 @@ reconnect ever becomes a thundering herd."*
 cost of each reconnect from "the board list" to "a whole board's lists and
 cards". H2 makes each card write cheaper but does nothing for the refetch.
 
-### 6. Production is deployed but unexercised
+### 6. Production is deployed and partly exercised — **mostly closed**
 
-**What:** zero rows, no seed, no account. Every isolation property is proven
-on dev only. Sign-up, invitations, email confirmation and realtime have
-never run against prod.
+**Closed by real usage.** Three people signed up, confirmed by email, and
+created workspaces; invitations were issued and redeemed, including one
+with the `client` role. Tenant isolation was then checked directly against
+those accounts: **6/6**, every block rolled back, row counts unchanged.
+`scripts/smoke-prod.mjs` now exists and passes 13/13 read-only checks.
 
-**Closes with the first real sign-up, which must be treated as a test, not
-as an event.** Someone should perform it deliberately: sign up, confirm the
-email actually arrives and its link resolves to the Netlify origin, create
-a workspace, invite a second address, redeem it, open a board in two
-browsers, and record the result. H10's smoke test would cover the read-only
-half and must not be mistaken for this — and it is not written yet.
+**Site URL is settled** — confirmation links could not have resolved
+otherwise. It was the highest-risk unverified setting; it is verified by
+use rather than by inspection.
 
-**Two prod settings are part of this gap and no test can reach them:**
-**Site URL** (unconfirmed) and **leaked-password protection** (confirmed
-**off** by the linter). Both are dashboard toggles.
+**What remains open:** prod has **0 boards**. Boards, lists, cards and
+realtime have never run against production data, and rest on the dev
+suites alone. Closing it needs someone to create a board, add a list and a
+card, and open it in two browsers — a smaller ask than the original
+first-sign-up test, and no longer blocking.
+
+**Still no automated reach:** **leaked-password protection**, confirmed
+**off** by the linter. A dashboard toggle.
 
 ### 7. ~~`assignee_id` accepted users outside the org~~ — CLOSED (H1, H6)
 

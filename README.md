@@ -69,17 +69,20 @@ Production auth path, verified against `flowspace-v2-prod`:
 
 ### What deployment does NOT prove
 
-The 59 backend checks and the SQL isolation suite **cannot run against
-prod**, because prod deliberately has no seed and the suites are built on
-seeded two-tenant fixtures. They pass against `flowspace-v2-dev`. Prod has
-**zero rows in every table**, so sign-up, tenant isolation, invitations and
-realtime are unexercised there. **The first real sign-up is the remaining
-test** — and it should be performed deliberately, as a test, with the
-result recorded. See gap 6 in
-[`docs/product-roadmap.md`](./docs/product-roadmap.md).
+The 64 backend checks and the SQL isolation suite still **cannot run
+against prod**: they are built on seeded two-tenant fixtures under fixed
+IDs, and prod has no seed. They pass against `flowspace-v2-dev`.
 
-"Deployed" and "verified in production" are different claims. Only the
-first is true today.
+What *has* been proven in production, using the three real accounts that
+now exist: sign-up, email confirmation, workspace creation, invitations
+(one workspace has an owner plus a `client`), and tenant isolation — 6/6,
+run as those actual users with every block rolled back.
+
+What has **not**: prod has 0 boards, so boards, lists, cards and realtime
+are unexercised by real users and rest on the dev suites alone.
+
+"Deployed" and "verified in production" are different claims. Both are now
+true of authentication and tenancy; only the first is true of Kanban.
 
 ## Phase 2 hardening pass (H1–H10)
 
@@ -149,13 +152,16 @@ Two hosted Supabase projects, both ap-south-1, both free tier:
 | | ref | contents |
 |---|---|---|
 | `flowspace-v2-dev` | `hjylkhswlwqiwvztynkw` | all migrations **+ seed** |
-| `flowspace-v2-prod` | `ajkzoiqsvcibvcodkuzs` | all migrations, **no seed**, zero rows |
+| `flowspace-v2-prod` | `ajkzoiqsvcibvcodkuzs` | all migrations, **no seed**, **real user data** |
 
 > **Never point a deployment at the dev project.** Its seed creates six
 > accounts sharing the password `password123`, published in this repo.
 >
-> **Never seed prod.** Zero rows is a deliberate invariant, and H10's smoke
-> test is read-only for that reason.
+> **Never seed prod, and never write to it from a script.** This used to be
+> justified by keeping the row count at zero. That justification is
+> obsolete — prod now holds real accounts, workspaces and memberships
+> belonging to actual people — and the rule is *stronger* for it, not
+> weaker. `scripts/smoke-prod.mjs` stays read-only on those grounds.
 
 Prod was verified empty and locked down on creation: RLS enabled *and*
 forced on every tenant-scoped table, and `anon` execute revoked on all

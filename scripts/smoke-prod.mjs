@@ -5,20 +5,39 @@
  *
  * WHY THIS IS READ-ONLY, AND MUST STAY THAT WAY
  *
- * The 64 backend checks cannot run against production: they sign in as
- * the six seeded accounts and write rows, and prod deliberately has no
- * seed. Zero rows in prod is an invariant, not an accident — it is what
- * makes "has anyone actually used this yet?" answerable at a glance.
+ * The original reason was that prod held zero rows and that emptiness was
+ * worth preserving. THAT REASON IS OBSOLETE — prod now holds real user
+ * accounts, workspaces and memberships created by actual people — and the
+ * constraint is stronger for it, not weaker. Do not read the old rationale
+ * going stale as permission to relax this. What used to be "don't spoil a
+ * clean row count" is now "don't touch other people's data."
+ *
+ * The 64 backend checks still cannot run here: they sign in as the six
+ * seeded accounts from supabase/seed.sql and write and delete rows under
+ * fixed seed IDs, and prod has no seed. They run against dev.
  *
  * So this script asserts only things observable from outside: status
  * codes, headers, redirects and refusals. It never signs up, never
  * authenticates, and never writes. If you find yourself wanting to add a
  * check that needs a session, that check belongs in the dev suites.
  *
- * The one deliberate exception is a sign-in attempt with an address that
- * cannot exist (@example.invalid is reserved by RFC 2606). That is an
- * error-path probe, not an authentication: it proves the auth chain is
- * reachable and correctly configured rather than 500ing or failing CORS.
+ * Audited against that claim: `probe()` is the only thing in this file
+ * that reaches the network, it always passes `redirect: 'manual'` so it
+ * can never be bounced onto an endpoint it did not choose, and of its
+ * thirteen call sites eleven are GET, two are CORS preflights, and one is
+ * the POST described below. The file imports nothing and touches no
+ * filesystem. Keep all three of those true.
+ *
+ * The one POST is a sign-in attempt with an address that cannot exist
+ * (@example.invalid is reserved by RFC 2606). That is an error-path probe,
+ * not an authentication: it proves the auth chain is reachable and
+ * correctly configured rather than 500ing or failing CORS. It hits
+ * GoTrue's /token endpoint, which signs IN — account creation is /signup,
+ * which this file never calls — so it cannot create or modify a user, and
+ * with a reserved domain it cannot collide with a real one either. Being
+ * precise about the residue: a failed sign-in does leave an entry in
+ * Supabase's own auth audit log and counts against the auth rate limit.
+ * No application table is touched, and no user-visible state changes.
  *
  * Exits non-zero if anything fails, so it can gate a release.
  */

@@ -64,9 +64,12 @@ app. **Click the thing in a browser.**
 does *not* remove the direct grant Supabase issues to `anon`. This is the
 entire reason migration `0008` exists. Run `get_advisors` after any DDL.
 
-**5. Prod has zero rows, deliberately.** The suites cannot run there —
-they need seeded two-tenant fixtures. Never seed prod. The smoke test is
-read-only for this reason.
+**5. Prod holds real user data.** Three accounts, three workspaces, five
+memberships, belonging to actual people. The suites still cannot run
+there — they need seeded two-tenant fixtures under fixed IDs, and prod has
+no seed. Never seed prod, and never write to it from a script. The old
+justification ("keep the row count at zero") is obsolete; the rule is
+stronger now, not weaker.
 
 ## Outstanding, in priority order
 

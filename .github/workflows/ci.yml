@@ -1,19 +1,24 @@
 name: CI
 
-# H7. Two independent gates:
+# H7. Two automatic gates, plus one manual one:
 #
-#   frontend — the production Vite build compiles.
-#   backend  — the 64 checks in backend/tests/*.mjs run against a real
-#              server and the DEV Supabase project.
+#   frontend — the production Vite build compiles.          every push + PR
+#   backend  — the 64 checks in backend/tests/*.mjs run     every push + PR
+#              against a real server and the DEV Supabase
+#              project.
+#   smoke    — 13 read-only checks against LIVE PRODUCTION.  MANUAL ONLY
 #
 # The backend suites are not unit tests. They boot the API on :4000, sign
 # in as the six seeded accounts from supabase/seed.sql, and write and
 # delete real rows. That means they need real credentials, and they need
 # the SEEDED project — see the guard in "Verify the CI secrets" below.
 #
-# What CI does NOT cover: supabase/tests/rls.test.sql (psql-driven, no npm
-# script, stays manual) and scripts/smoke-prod.mjs (points at live URLs).
-# See docs/deployment.md.
+# The smoke job is workflow_dispatch-only on purpose: it is the only job
+# here that touches production, and production now holds real user data.
+# Read-only or not, hitting it is a decision, not a side effect of a push.
+#
+# What CI still does NOT cover: supabase/tests/rls.test.sql (psql-driven,
+# no npm script, stays manual). See docs/deployment.md.
 
 on:
   pull_request:
@@ -27,8 +32,12 @@ permissions:
   contents: read
 
 # Supersede an in-flight run for the same branch when a new commit lands.
+#
+# A manual dispatch is deliberately given its OWN group, keyed by run id. A
+# dispatch now also runs the production smoke test, and a run someone asked
+# for by hand must not be cancelled by an unrelated push — nor cancel one.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
   cancel-in-progress: true
 
 jobs:
@@ -57,13 +66,18 @@ jobs:
       # carry whatever CI had — which is nothing. The app tolerates that
       # at build time (frontend/src/lib/supabase.js only throws when the
       # module is imported in a browser), so this step is a COMPILE CHECK
-      # and nothing more. Verified locally against an empty env directory:
-      # the build succeeds with zero VITE_* variables defined.
+      # and nothing more.
       #
-      # The output is therefore NOT deployable and is deliberately not
-      # uploaded as an artifact. The real production bundle is built on a
-      # developer machine from frontend/.env.production — see
-      # docs/deployment.md.
+      # RE-VERIFIED with frontend/.env and frontend/.env.production both
+      # moved aside and no VITE_* in the shell — the exact shape of a fresh
+      # CI checkout, since both files are gitignored. `npm run build` exits
+      # 0, 122 modules transformed. The resulting bundle falls back to
+      # `localhost:4000` and contains no Supabase URL at all, which is the
+      # proof that it is a compile check and NOT a deployable artifact.
+      #
+      # It is therefore deliberately not uploaded as an artifact. The real
+      # production bundle is built on a developer machine from
+      # frontend/.env.production — see docs/deployment.md.
       - name: npm run build
         run: npm run build
 
@@ -133,10 +147,14 @@ jobs:
 
           # Hard stop if anyone ever points CI at production.
           #
-          # These suites sign in as seeded accounts and write rows. Prod
-          # (ajkzoiqsvcibvcodkuzs) has zero rows and must keep them; dev
+          # These suites sign in as seeded accounts and write AND DELETE
+          # rows under fixed seed IDs. Prod (ajkzoiqsvcibvcodkuzs) now holds
+          # real user accounts and workspaces created by actual people; dev
           # (hjylkhswlwqiwvztynkw) is the seeded one. A wrong secret here
           # would turn every CI run into an attempt to write to live data.
+          # Verified locally: this guard exits 1 on the prod ref, and the
+          # missing-secret branch above exits 1 when GitHub injects the
+          # secrets as empty strings, which is what an absent secret is.
           if printf '%s' "$SUPABASE_URL" | grep -q 'ajkzoiqsvcibvcodkuzs'; then
             echo "::error::SUPABASE_URL points at the PRODUCTION Supabase project (ajkzoiqsvcibvcodkuzs)."
             echo "::error::The backend suites write rows. They must only ever run against dev (hjylkhswlwqiwvztynkw)."
@@ -174,6 +192,15 @@ jobs:
           } > .env
           echo "wrote backend/.env with $(wc -l < .env) keys"
 
+      # SERVER_PID crosses a step boundary via $GITHUB_ENV, which is the one
+      # piece of this job that cannot be exercised outside Actions. It was
+      # reproduced locally with a stand-in $GITHUB_ENV sourced between steps
+      # and it does carry: the value is npm's pid, not node's — see "Stop
+      # the API" at the bottom, which is why that step kills children too.
+      #
+      # The background process survives the step because both its streams
+      # are redirected to a file; a step that leaves a pipe open to a
+      # background child is the version of this that hangs.
       - name: Start the API on :4000 and wait for /health
         run: |
           npm start > "$RUNNER_TEMP/server.log" 2>&1 &
@@ -209,7 +236,73 @@ jobs:
         if: always()
         run: cat "$RUNNER_TEMP/server.log" || true
 
+      # Cosmetic on a hosted runner — the VM is destroyed either way — but
+      # it is the step anyone reproducing this job locally relies on, and as
+      # written it did not work. $SERVER_PID is the pid of the `npm`
+      # wrapper, and the API is npm's child; SIGTERM to npm left the node
+      # process alive and holding :4000. Kill the children first, then the
+      # wrapper. Both are `|| true`: the process being gone already is the
+      # success case, and this step must never be what turns a job red.
       - name: Stop the API
         if: always()
         run: |
-          if [ -n "${SERVER_PID:-}" ]; then kill "$SERVER_PID" 2>/dev/null || true; fi
+          if [ -n "${SERVER_PID:-}" ]; then
+            pkill -P "$SERVER_PID" 2>/dev/null || true
+            kill "$SERVER_PID" 2>/dev/null || true
+          fi
+
+  smoke:
+    name: Production smoke test (read-only, manual)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # MANUAL ONLY. Actions → CI → Run workflow.
+    #
+    # Every other job in this file runs against dev. This one runs against
+    # the live Netlify site, the live Railway API and the prod Supabase
+    # project — which now contain real user accounts and workspaces. The
+    # script is read-only and audited to stay that way (see the header of
+    # scripts/smoke-prod.mjs), but "read-only" is not the same as "free":
+    # it is traffic against a system real people are using, so it happens
+    # when someone asks for it. Run it after a production deploy.
+    #
+    # Note that dispatching this workflow also re-runs frontend and backend.
+    # That is intended — a manual run is "check everything".
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # No `cache:` here on purpose. There is no package.json at the
+          # repo root and the script has zero dependencies — it uses global
+          # fetch only — so there is no lockfile to key a cache on and
+          # nothing to install. Setting cache: npm would fail the step.
+          node-version: '20'
+
+      # SMOKE_SUPABASE_ANON is optional in the sense that the other eleven
+      # checks do not need it — but the script treats its absence as a
+      # FAILURE, not a skip, and exits non-zero. That is deliberate: a
+      # smoke test that quietly shrinks when a key is missing is worse than
+      # one that goes red. This step exists so the red says why in one line
+      # instead of leaving someone to decode "P12 skipped".
+      - name: Note whether the optional prod anon key is present
+        env:
+          SMOKE_SUPABASE_ANON: ${{ secrets.SMOKE_SUPABASE_ANON }}
+        run: |
+          if [ -z "$SMOKE_SUPABASE_ANON" ]; then
+            echo "::warning::Repository secret SMOKE_SUPABASE_ANON is not set."
+            echo "::warning::P12/P13 (prod auth reachable, auth rejects a non-existent account) will FAIL, and the job will be red, even if the other 11 checks pass."
+            echo "::warning::Set it to the PRODUCTION Supabase anon key — public by design, RLS is the protection. See the 'CI' section of docs/deployment.md."
+          else
+            echo "SMOKE_SUPABASE_ANON present; all 13 checks will run"
+          fi
+
+      # SMOKE_FRONTEND / SMOKE_API / SMOKE_SUPABASE are left unset so the
+      # script uses its own built-in production defaults. Overriding them
+      # here would mean this job could silently stop testing production.
+      - name: node scripts/smoke-prod.mjs
+        env:
+          SMOKE_SUPABASE_ANON: ${{ secrets.SMOKE_SUPABASE_ANON }}
+        run: node scripts/smoke-prod.mjs
