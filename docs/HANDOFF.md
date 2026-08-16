@@ -21,19 +21,34 @@ the single most valuable property of the codebase.
 
 | Phase | State |
 |---|---|
-| 1 — Multi-tenant workspaces, Auth, RLS | **Shipped and deployed** |
-| 2 — Real-time Kanban | **Shipped, deployed, hardened** (H1–H6, H9, H10) |
+| 1 — Multi-tenant workspaces, Auth, RLS | **Shipped, deployed, verified in production** |
+| 2 — Real-time Kanban | **Shipped, deployed, hardened** (H1–H10 complete) |
 | 3 — AI task automation | **Not started.** Spec: `docs/phase-3-spec.md` |
 | 4 — Client portal | Not started. **Its blocker is now cleared** (H4) |
 | 5 — Billing, onboarding, admin | Not started |
 
+**Phase 2 is closed.** All ten hardening items are done: H1–H6 shipped and
+deployed, H9 covered by 25 assertions, H7 (CI) written and dry-run
+locally, H8 (`docs/deployment.md`) written, H10
+(`scripts/smoke-prod.mjs`) written and passing.
+
 **64 automated checks pass** (`cd backend && npm test`): 9 realtime, 12
 invitation, 18 kanban, 25 hardening. Plus `supabase/tests/rls.test.sql`
-(psql, manual) and `scripts/smoke-prod.mjs` (13 read-only prod checks).
+(psql, manual) and `scripts/smoke-prod.mjs` — 13 read-only production
+checks, 13/13.
 
 Live: <https://flowspace-v2.netlify.app> ·
 <https://backend-production-8d147.up.railway.app> ·
-repo `mithilesh-creator/flowspace-v2` (public).
+repo `mithilesh-creator/flowspace-v2` (public). Backend is running commit
+`7435614` (deployment `5cae9256`).
+
+**CI exists but has never run in Actions.** The workflow was dry-run step
+by step on a developer machine, which caught a real defect — `SERVER_PID`
+is npm's pid, not node's, so the teardown step silently left the API
+alive. Everything since is verified locally only: `actions/checkout`, the
+npm cache, the fork-PR guard and the concurrency groups have no local
+equivalent, and the two repository secrets do not exist yet. Treat the
+first real run as a first run.
 
 ## Read these before writing code
 
@@ -128,6 +143,14 @@ belong to real people.
 - **Eviction assumes one Node process.** `fetchSockets()` over the
   `user:<uuid>` room is the cheap implementation; a second replica breaks
   it. This is the one call to change if the deployment shape does.
+- **The SQL suite was never extended for H1–H3.** It is still `T01`–`T24`.
+  Equivalent coverage exists through PostgREST in `hardening.test.mjs`, so
+  the properties *are* tested — but not at the layer the contract asked
+  for. Recorded rather than papered over.
+- **Cards have no `unique (list_id, position)`; lists do.** Deliberate for
+  drag-and-drop (a unique index turns concurrent drops into 409s), but it
+  means ties are possible and ordering falls to `(position, created_at)`.
+  Revisit before Phase 3 inserts subtasks in bulk.
 
 ## Before starting Phase 3
 
@@ -143,3 +166,19 @@ belong to real people.
 Also note H2 changed the card shape: cards carry `board_id`, `NOT NULL`,
 inside a three-column foreign key. Bulk-inserting AI-generated subtasks
 must populate it.
+
+## First moves in a new session
+
+1. Read `CLAUDE.md`, then this file, then `docs/architecture.md`.
+2. `cd backend && npm start` in one shell — most local work needs the API
+   on `:4000`, and every test suite fails with `ECONNREFUSED` without it.
+   `node` may not be on PATH; it lives at `C:\Program Files\nodejs`.
+3. `cd backend && npm test` — expect **64/64**. If it fails, fix that
+   before anything else; it is the project's baseline.
+4. `node scripts/smoke-prod.mjs` — expect **13/13**. Confirms the live
+   deployment still works before you change anything.
+5. Only then start Phase 3.
+
+Do not run `supabase db reset` against dev without reason — it is a shared
+database and other work depends on its seeded fixtures. Never point
+anything at prod.
